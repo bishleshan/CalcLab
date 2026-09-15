@@ -271,6 +271,7 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   <button class="snap-btn active" id="btn-colormode" onclick="cycleColorMode()">Solid ◼</button>
   <button class="snap-btn active" id="btn-surface" onclick="cycleSurfaceStyle()">Faceted ◆</button>
   <button class="snap-btn active" id="btn-grid" onclick="cycleGrid()">Grid 50%</button>
+  <button class="snap-btn active" id="btn-probe" onclick="cycleProbe()">Point ⚲</button>
   <button class="snap-btn" id="btn-relief" onclick="cycleRelief()">Depth 1.4×</button>
   <button class="snap-btn active" id="btn-spin" onclick="toggleSpin()">Auto ↻</button>
 </div>
@@ -313,10 +314,12 @@ renderer.toneMappingExposure = 1.05;
 renderer.setClearColor(0x020617, 1);
 document.body.appendChild(renderer.domElement);
 
-// OrbitControls with Damping
+// OrbitControls with Damping and Auto-Orbit
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.8;
 
 // ─── Dynamic View-Dependent & Multi-Angle Lighting System ────────
 // 1. Camera-mounted Eye-Light (shifts specular glints and reflections dynamically as you rotate!)
@@ -348,13 +351,6 @@ const pl1 = new THREE.PointLight(0x00f5ff, 1.4, 20);
 pl1.position.set(4, 4.5, 4);
 scene.add(pl1);
 
-// GridHelper
-const grid = new THREE.GridHelper(8, 28, 0x002838, 0x001420);
-grid.material.transparent = true;
-grid.material.opacity = 0.5;
-grid.position.y = -2.2;
-scene.add(grid);
-
 // 3D Sprite Label Generator
 function makeLabel(text, pos, color, parent = scene, scaleW = 0.65, scaleH = 0.32) {
   const c = document.createElement('canvas');
@@ -365,7 +361,7 @@ function makeLabel(text, pos, color, parent = scene, scaleW = 0.65, scaleH = 0.3
   ctx.textAlign = 'center';
   ctx.fillText(text, 48, 26);
   const tex = new THREE.CanvasTexture(c);
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.85 });
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.88 });
   const sprite = new THREE.Sprite(mat);
   sprite.position.set(...pos);
   sprite.scale.set(scaleW, scaleH, 1);
@@ -373,21 +369,82 @@ function makeLabel(text, pos, color, parent = scene, scaleW = 0.65, scaleH = 0.3
   return sprite;
 }
 
-const lblX = makeLabel('X', [4.5, 0, 0], '#00f5ff');
-const lblY = makeLabel('Y', [0, 0, 4.5], '#ff2d78');
-// Position Z label at corner pillar rather than blocking center
-const lblZ = makeLabel('Z (Height)', [0, 3.4, 0], '#a855f7');
+// ─── 2D-Style Cartesian Coordinate Graph Plane in 3D ─────────
+const graphGridGroup = new THREE.Group();
+scene.add(graphGridGroup);
 
-// Solid 3D Coordinate Axis Lines
-const axGeoX = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-4,0,0), new THREE.Vector3(4,0,0)]);
-const axGeoY = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-4), new THREE.Vector3(0,0,4)]);
-const axGeoZ = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-2.2,0), new THREE.Vector3(0,3.2,0)]);
-const axLineX = new THREE.Line(axGeoX, new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.6, transparent: true }));
-const axLineY = new THREE.Line(axGeoY, new THREE.LineBasicMaterial({ color: 0xff2d78, opacity: 0.6, transparent: true }));
-const axLineZ = new THREE.Line(axGeoZ, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.6, transparent: true }));
-scene.add(axLineX);
-scene.add(axLineY);
-scene.add(axLineZ);
+const GROUND_Y = -2.2;
+
+// Primary Grid: 8x8 squares (exact 1.0 unit cell spacing, matching 2D graph paper)
+const grid = new THREE.GridHelper(8, 8, 0x00f5ff, 0x1e3a5f);
+grid.material.transparent = true;
+grid.material.opacity = 0.55;
+grid.position.y = GROUND_Y;
+graphGridGroup.add(grid);
+
+// Secondary Sub-grid: 16x16 squares (0.5 unit finer lines)
+const subGrid = new THREE.GridHelper(8, 16, 0x00f5ff, 0x0d2138);
+subGrid.material.transparent = true;
+subGrid.material.opacity = 0.22;
+subGrid.position.y = GROUND_Y;
+graphGridGroup.add(subGrid);
+
+// 2D-Style Dot Grid: Glowing coordinate dots at every integer (x, y) intersection
+// This ensures that between any two dots, the distance is exactly 1.0 unit!
+const dotGridPositions = [];
+for (let gx = -3; gx <= 3; gx++) {
+  for (let gy = -3; gy <= 3; gy++) {
+    dotGridPositions.push(gx, GROUND_Y, gy);
+  }
+}
+const dotGridGeo = new THREE.BufferGeometry();
+dotGridGeo.setAttribute('position', new THREE.Float32BufferAttribute(dotGridPositions, 3));
+const dotGridMat = new THREE.PointsMaterial({
+  color: 0x38bdf8,
+  size: 0.09,
+  transparent: true,
+  opacity: 0.75
+});
+graphGridGroup.add(new THREE.Points(dotGridGeo, dotGridMat));
+
+// Axis Tick Dots & Number Labels (Every 1.0 unit step along X and Y)
+const dotGeo = new THREE.SphereGeometry(0.075, 12, 12);
+const dotMatX = new THREE.MeshBasicMaterial({ color: 0x00f5ff });
+const dotMatY = new THREE.MeshBasicMaterial({ color: 0xff2d78 });
+
+for (let i = -3; i <= 3; i++) {
+  if (i !== 0) {
+    // X-axis tick dot
+    const dotX = new THREE.Mesh(dotGeo, dotMatX);
+    dotX.position.set(i, GROUND_Y, 0);
+    graphGridGroup.add(dotX);
+    makeLabel((i > 0 ? '+' : '') + i, [i, GROUND_Y, -0.38], '#00f5ff', graphGridGroup, 0.42, 0.22);
+
+    // Y-axis tick dot
+    const dotY = new THREE.Mesh(dotGeo, dotMatY);
+    dotY.position.set(0, GROUND_Y, i);
+    graphGridGroup.add(dotY);
+    makeLabel((i > 0 ? '+' : '') + i, [-0.44, GROUND_Y, i], '#ff2d78', graphGridGroup, 0.42, 0.22);
+  }
+}
+
+// Origin dot (0, 0) on the graph
+const originGeo = new THREE.SphereGeometry(0.095, 16, 16);
+const originDot = new THREE.Mesh(originGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+originDot.position.set(0, GROUND_Y, 0);
+graphGridGroup.add(originDot);
+makeLabel('(0,0)', [0.44, GROUND_Y, 0.38], '#ffffff', graphGridGroup, 0.55, 0.24);
+
+// 3D Coordinate Axis Lines on ground plane
+const axGeoX = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-3.8, GROUND_Y, 0), new THREE.Vector3(3.8, GROUND_Y, 0)]);
+const axGeoY = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, GROUND_Y, -3.8), new THREE.Vector3(0, GROUND_Y, 3.8)]);
+const axLineX = new THREE.Line(axGeoX, new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.85, transparent: true }));
+const axLineY = new THREE.Line(axGeoY, new THREE.LineBasicMaterial({ color: 0xff2d78, opacity: 0.85, transparent: true }));
+graphGridGroup.add(axLineX);
+graphGridGroup.add(axLineY);
+const lblX = makeLabel('X', [4.2, GROUND_Y, 0], '#00f5ff', graphGridGroup);
+const lblY = makeLabel('Y', [0, GROUND_Y, 4.2], '#ff2d78', graphGridGroup);
+const lblZ = makeLabel('Z (Height)', [0, 3.4, 0], '#a855f7');
 
 // ─── 3D Graduated Vertical Height Ruler (Corner Pillar) ────────
 const cornerPillar = new THREE.Group();
@@ -406,6 +463,118 @@ cornerPillar.add(new THREE.Line(pillarGeo, new THREE.LineBasicMaterial({ color: 
   ]);
   cornerPillar.add(new THREE.Line(tickGeo, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.6, transparent: true })));
   makeLabel((zv > 0 ? '+' : '') + zv, [-2.6, zv, -3.4], '#c084fc', cornerPillar, 0.45, 0.22);
+});
+
+// ─── 3D Point Inspector: Two Dots with Vertical Projection Line ───
+const probeGroup = new THREE.Group();
+scene.add(probeGroup);
+
+// Dot 1: Domain Floor Point (x, GROUND_Y, y)
+const floorDot = new THREE.Mesh(
+  new THREE.SphereGeometry(0.09, 16, 16),
+  new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+);
+probeGroup.add(floorDot);
+
+// Dot 2: Surface Point (x, z, y)
+const surfaceDot = new THREE.Mesh(
+  new THREE.SphereGeometry(0.12, 16, 16),
+  new THREE.MeshBasicMaterial({ color: 0xffffff })
+);
+probeGroup.add(surfaceDot);
+
+// Halo around surface dot
+const halo = new THREE.Mesh(
+  new THREE.RingGeometry(0.14, 0.20, 24),
+  new THREE.MeshBasicMaterial({ color: 0xfbbf24, side: THREE.DoubleSide })
+);
+probeGroup.add(halo);
+
+// Drop Line between the two dots
+let dropLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,1,0)]);
+const dropLine = new THREE.Line(dropLineGeo, new THREE.LineDashedMaterial({ color: 0xfbbf24, dashSize: 0.12, gapSize: 0.08 }));
+probeGroup.add(dropLine);
+
+// 2D Ground Projection Path (from origin -> (px, 0) -> (px, py))
+let baseLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,GROUND_Y,0), new THREE.Vector3(0,GROUND_Y,0)]);
+const baseLine = new THREE.Line(baseLineGeo, new THREE.LineDashedMaterial({ color: 0x38bdf8, dashSize: 0.1, gapSize: 0.06 }));
+probeGroup.add(baseLine);
+
+let probeTag = null;
+let floorTag = null;
+let currentProbeCoords = [0, 1.57];
+
+function updateProbe(px, py) {
+  px = Math.max(-3, Math.min(3, px));
+  py = Math.max(-3, Math.min(3, py));
+  currentProbeCoords = [px, py];
+  const pz = fExpr(px, py);
+  const surfY = pz * reliefFactor;
+
+  floorDot.position.set(px, GROUND_Y, py);
+  surfaceDot.position.set(px, surfY, py);
+  halo.position.set(px, surfY, py);
+
+  const pts = [new THREE.Vector3(px, GROUND_Y, py), new THREE.Vector3(px, surfY, py)];
+  dropLine.geometry.dispose();
+  dropLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  dropLine.computeLineDistances();
+
+  const basePts = [
+    new THREE.Vector3(0, GROUND_Y, 0),
+    new THREE.Vector3(px, GROUND_Y, 0),
+    new THREE.Vector3(px, GROUND_Y, py)
+  ];
+  baseLine.geometry.dispose();
+  baseLine.geometry = new THREE.BufferGeometry().setFromPoints(basePts);
+  baseLine.computeLineDistances();
+
+  if (probeTag) probeGroup.remove(probeTag);
+  if (floorTag) probeGroup.remove(floorTag);
+
+  const tagText = 'P(' + px.toFixed(1) + ', ' + py.toFixed(1) + ', ' + pz.toFixed(2) + ')';
+  probeTag = makeLabel(tagText, [px, surfY + 0.38, py], '#fef08a', probeGroup, 1.25, 0.36);
+  floorTag = makeLabel('(' + px.toFixed(1) + ', ' + py.toFixed(1) + ')', [px, GROUND_Y - 0.28, py], '#7dd3fc', probeGroup, 0.95, 0.28);
+  angleHud.textContent = tagText + ' · 3D';
+}
+
+const probePoints = [
+  [0, 1.57],  // First Ripple Peak
+  [0, 0],     // Center Origin
+  [1.57, 0],  // X Peak
+  [0, 3.14],  // Zero Ring
+  [0, 4.71],  // Second Peak
+  [1.5, 1.5], // Diagonal
+];
+let probeIdx = 0;
+window.cycleProbe = function() {
+  probeIdx = (probeIdx + 1) % probePoints.length;
+  updateProbe(probePoints[probeIdx][0], probePoints[probeIdx][1]);
+};
+
+// Tap-to-inspect raycaster on 3D surface
+const raycaster = new THREE.Raycaster();
+const pointerVec = new THREE.Vector2();
+let pointerDownPos = { x: 0, y: 0 };
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  pointerDownPos = { x: e.clientX, y: e.clientY };
+});
+
+renderer.domElement.addEventListener('pointerup', (e) => {
+  const dx = e.clientX - pointerDownPos.x;
+  const dy = e.clientY - pointerDownPos.y;
+  if (Math.hypot(dx, dy) < 8) {
+    pointerVec.x = (e.clientX / window.innerWidth) * 2 - 1;
+    pointerVec.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(pointerVec, camera);
+    if (typeof surfMesh !== 'undefined') {
+      const hits = raycaster.intersectObject(surfMesh);
+      if (hits.length > 0) {
+        updateProbe(hits[0].point.x, hits[0].point.z);
+      }
+    }
+  }
 });
 
 // 250 Glowing Space Particles
@@ -621,6 +790,10 @@ function rebuildMesh() {
   if (elevMax) elevMax.textContent = (zMax >= 0 ? '+' : '') + zMax.toFixed(1);
   if (elevMid) elevMid.textContent = ((zMax + zMin) / 2).toFixed(1);
   if (elevMin) elevMin.textContent = (zMin >= 0 ? '+' : '') + zMin.toFixed(1);
+
+  if (typeof updateProbe === 'function') {
+    updateProbe(currentProbeCoords[0], currentProbeCoords[1]);
+  }
 }
 
 rebuildMesh();
@@ -647,8 +820,8 @@ window.resetAll = function() {
 };
 
 window.toggleSpin = function() {
-  autoRotate = !autoRotate;
-  document.getElementById('btn-spin').classList.toggle('active', autoRotate);
+  controls.autoRotate = !controls.autoRotate;
+  document.getElementById('btn-spin').classList.toggle('active', controls.autoRotate);
 };
 
 const colorModes = ['solid', 'stepped', 'gradient'];
@@ -729,7 +902,7 @@ window.snapView = function(view) {
   updateAngleHud();
 };
 
-controls.addEventListener('start', () => { autoRotate = false; document.getElementById('btn-spin').classList.remove('active'); });
+controls.addEventListener('start', () => { controls.autoRotate = false; document.getElementById('btn-spin').classList.remove('active'); });
 controls.addEventListener('change', updateAngleHud);
 
 window.addEventListener('resize', () => {
@@ -745,13 +918,10 @@ function animate() {
   requestAnimationFrame(animate);
   animTime += 0.016;
 
-  if (autoRotate) {
-    surfGrp.rotation.y += 0.003;
-    updateAngleHud();
+  if (typeof halo !== 'undefined' && halo) {
+    halo.quaternion.copy(camera.quaternion);
   }
 
-  // Floating bobbing motion & rotating light from Graph3D.js
-  surfGrp.position.y = Math.sin(animTime * 0.5) * 0.08;
   pl1.position.x = Math.cos(animTime * 0.3) * 5;
   pl1.position.z = Math.sin(animTime * 0.3) * 5;
 
