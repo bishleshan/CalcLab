@@ -435,33 +435,107 @@ originDot.position.set(0, GROUND_Y, 0);
 graphGridGroup.add(originDot);
 makeLabel('(0,0)', [0.44, GROUND_Y, 0.38], '#ffffff', graphGridGroup, 0.55, 0.24);
 
-// 3D Coordinate Axis Lines on ground plane
-const axGeoX = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-3.8, GROUND_Y, 0), new THREE.Vector3(3.8, GROUND_Y, 0)]);
-const axGeoY = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, GROUND_Y, -3.8), new THREE.Vector3(0, GROUND_Y, 3.8)]);
-const axLineX = new THREE.Line(axGeoX, new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.85, transparent: true }));
-const axLineY = new THREE.Line(axGeoY, new THREE.LineBasicMaterial({ color: 0xff2d78, opacity: 0.85, transparent: true }));
-graphGridGroup.add(axLineX);
-graphGridGroup.add(axLineY);
-const lblX = makeLabel('X', [4.2, GROUND_Y, 0], '#00f5ff', graphGridGroup);
-const lblY = makeLabel('Y', [0, GROUND_Y, 4.2], '#ff2d78', graphGridGroup);
-const lblZ = makeLabel('Z (Height)', [0, 3.4, 0], '#a855f7');
+// ─── Proper Solid 3D Coordinate Axes (X, Y, Z) with Directional Arrows ───
+function createAxisCylinder(length, radius, color, emissive) {
+  const geo = new THREE.CylinderGeometry(radius, radius, length, 16);
+  const mat = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.25,
+    metalness: 0.35,
+    emissive,
+    emissiveIntensity: 0.45
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+function createAxisArrow(radius, height, color, emissive) {
+  const geo = new THREE.ConeGeometry(radius, height, 16);
+  const mat = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.2,
+    metalness: 0.4,
+    emissive,
+    emissiveIntensity: 0.55
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+// 1. SOLID X-AXIS (Electric Cyan · Real 3D Rod)
+const rodX = createAxisCylinder(7.6, 0.034, 0x00f5ff, 0x005577);
+rodX.rotation.z = -Math.PI / 2;
+rodX.position.set(0, GROUND_Y, 0);
+graphGridGroup.add(rodX);
+
+const arrowX = createAxisArrow(0.095, 0.24, 0x00f5ff, 0x0077aa);
+arrowX.rotation.z = -Math.PI / 2;
+arrowX.position.set(3.92, GROUND_Y, 0);
+graphGridGroup.add(arrowX);
+
+const lblX = makeLabel('+X Axis', [4.45, GROUND_Y, 0], '#00f5ff', graphGridGroup, 0.75, 0.32);
+
+// 2. SOLID Y-AXIS (Hot Rose / Magenta · Real 3D Rod)
+const rodY = createAxisCylinder(7.6, 0.034, 0xff2d78, 0x66002b);
+rodY.rotation.x = Math.PI / 2;
+rodY.position.set(0, GROUND_Y, 0);
+graphGridGroup.add(rodY);
+
+const arrowY = createAxisArrow(0.095, 0.24, 0xff2d78, 0x88003a);
+arrowY.rotation.x = Math.PI / 2;
+arrowY.position.set(0, GROUND_Y, 3.92);
+graphGridGroup.add(arrowY);
+
+const lblY = makeLabel('+Y Axis', [0, GROUND_Y, 4.45], '#ff2d78', graphGridGroup, 0.75, 0.32);
+
+// 3. SOLID Z-AXIS (Royal Violet · Vertical Elevation Height Shaft)
+const axZGroup = new THREE.Group();
+scene.add(axZGroup);
+
+const zLength = 5.3;
+const rodZ = createAxisCylinder(zLength, 0.036, 0xc084fc, 0x581c87);
+rodZ.position.set(0, (GROUND_Y + 3.1) / 2, 0);
+axZGroup.add(rodZ);
+
+const arrowZ = createAxisArrow(0.10, 0.26, 0xc084fc, 0x7e22ce);
+arrowZ.position.set(0, 3.23, 0);
+axZGroup.add(arrowZ);
+
+const lblZ = makeLabel('+Z (Height)', [0, 3.55, 0], '#c084fc', axZGroup, 1.1, 0.36);
+
+// Ticks and numerical rings along the central Z-axis
+[-2, -1, 0, 1, 2, 3].forEach(zv => {
+  const tickRing = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.065, 0.065, 0.02, 16),
+    new THREE.MeshBasicMaterial({ color: zv === 0 ? 0xffffff : 0xa855f7 })
+  );
+  tickRing.position.set(0, zv, 0);
+  axZGroup.add(tickRing);
+  if (zv !== 0) {
+    makeLabel((zv > 0 ? '+' : '') + zv, [0.38, zv, 0], '#c084fc', axZGroup, 0.42, 0.22);
+  }
+});
+
+// Central Mathematical Origin (0, 0, 0)
+const zeroDot = new THREE.Mesh(
+  new THREE.SphereGeometry(0.08, 16, 16),
+  new THREE.MeshBasicMaterial({ color: 0xffffff })
+);
+zeroDot.position.set(0, 0, 0);
+axZGroup.add(zeroDot);
+makeLabel('(0,0,0)', [0.55, 0, 0], '#ffffff', axZGroup, 0.72, 0.28);
 
 // ─── 3D Graduated Vertical Height Ruler (Corner Pillar) ────────
 const cornerPillar = new THREE.Group();
 scene.add(cornerPillar);
 
-const pillarGeo = new THREE.BufferGeometry().setFromPoints([
-  new THREE.Vector3(-3.4, -2.2, -3.4),
-  new THREE.Vector3(-3.4, 2.6, -3.4)
-]);
-cornerPillar.add(new THREE.Line(pillarGeo, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.8, transparent: true })));
+const pillarRod = createAxisCylinder(5.0, 0.025, 0xa855f7, 0x3b0764);
+pillarRod.position.set(-3.4, 0.3, -3.4);
+cornerPillar.add(pillarRod);
 
 [-2, -1, 0, 1, 2].forEach(zv => {
-  const tickGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(-3.4, zv, -3.4),
-    new THREE.Vector3(-3.1, zv, -3.4)
-  ]);
-  cornerPillar.add(new THREE.Line(tickGeo, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.6, transparent: true })));
+  const tickRod = createAxisCylinder(0.3, 0.018, 0xa855f7, 0x4c1d95);
+  tickRod.rotation.z = Math.PI / 2;
+  tickRod.position.set(-3.25, zv, -3.4);
+  cornerPillar.add(tickRod);
   makeLabel((zv > 0 ? '+' : '') + zv, [-2.6, zv, -3.4], '#c084fc', cornerPillar, 0.45, 0.22);
 });
 
@@ -876,24 +950,20 @@ function updateButtonStates(view) {
 window.snapView = function(view) {
   if (view === 'top') {
     camera.position.set(0.001, 7.5, 0.001);
-    lblZ.visible = false;
-    axLineZ.visible = false;
-    cornerPillar.visible = false;
+    if (typeof axZGroup !== 'undefined') axZGroup.visible = false;
+    if (typeof cornerPillar !== 'undefined') cornerPillar.visible = false;
   } else if (view === 'front') {
     camera.position.set(0, 1.8, 6.8);
-    lblZ.visible = true;
-    axLineZ.visible = true;
-    cornerPillar.visible = true;
+    if (typeof axZGroup !== 'undefined') axZGroup.visible = true;
+    if (typeof cornerPillar !== 'undefined') cornerPillar.visible = true;
   } else if (view === 'side') {
     camera.position.set(6.8, 1.8, 0);
-    lblZ.visible = true;
-    axLineZ.visible = true;
-    cornerPillar.visible = true;
+    if (typeof axZGroup !== 'undefined') axZGroup.visible = true;
+    if (typeof cornerPillar !== 'undefined') cornerPillar.visible = true;
   } else {
     camera.position.set(4.0, 3.2, 4.0);
-    lblZ.visible = true;
-    axLineZ.visible = true;
-    cornerPillar.visible = true;
+    if (typeof axZGroup !== 'undefined') axZGroup.visible = true;
+    if (typeof cornerPillar !== 'undefined') cornerPillar.visible = true;
   }
   camera.lookAt(0, 0, 0);
   controls.target.set(0, 0, 0);
