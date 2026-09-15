@@ -166,6 +166,36 @@ function toSafe3dExpression(expr) {
   return js;
 }
 
+// ─── Mathematical Synchronization: 2D f(x) ⇄ 3D Surface ───────────
+function convert2dTo3d(rawExpr, style = 'revolution') {
+  if (!rawExpr) return 'sin(sqrt(x^2 + y^2))';
+  const clean = rawExpr.trim();
+  // If formula already contains 'y', it's an explicit bivariate 3D surface
+  if (/\by\b/.test(clean)) return clean;
+
+  if (style === 'extrusion') {
+    // 3D Extrusion cylinder: z = f(x)
+    return clean;
+  }
+  // Surface of Revolution: rotate f(x) 360 deg around z-axis (r = sqrt(x^2 + y^2))
+  // Replace standalone 'x' with '(sqrt(x^2 + y^2))'
+  return clean.replace(/\bx\b/g, '(sqrt(x^2 + y^2))');
+}
+
+function convert3dTo2d(rawExpr) {
+  if (!rawExpr) return 'sin(x)';
+  const clean = rawExpr.trim();
+  // If formula does not contain 'y', it's already a 2D function in x
+  if (!/\by\b/.test(clean)) return clean;
+
+  // If it's revolution formula sqrt(x^2 + y^2), in 2D slice it becomes x
+  let res = clean.replace(/sqrt\(\s*x\^2\s*\+\s*y\^2\s*\)/g, 'x');
+  res = res.replace(/x\^2\s*\+\s*y\^2/g, 'x^2');
+  // Otherwise cross-section slice at y = 0
+  res = res.replace(/\by\b/g, '0');
+  return res;
+}
+
 function hapticSelect() {
   Haptics.selectionAsync().catch(() => {});
 }
@@ -1006,8 +1036,8 @@ updateAngleHud();
 }
 
 // ─── 2D SVG Graph with Independent 2D Zoom & High-Contrast Axes ───
-function Graph2D({ expr, showDeriv, showIntegral, xMin, xMax, yMin, yMax, traceX }) {
-  const W = GRAPH_W, H = GRAPH_H;
+function Graph2D({ expr, showDeriv, showIntegral, xMin, xMax, yMin, yMax, traceX, height }) {
+  const W = GRAPH_W, H = height || GRAPH_H;
 
   const fPts = useMemo(() => buildPoints(expr, xMin, xMax), [expr, xMin, xMax]);
   const dPts = useMemo(() => showDeriv ? buildDerivPoints(expr, xMin, xMax) : [], [expr, showDeriv, xMin, xMax]);
@@ -1165,10 +1195,15 @@ function Graph2D({ expr, showDeriv, showIntegral, xMin, xMax, yMin, yMax, traceX
 // ─── Main Screen Component ───────────────────────────────────
 export default function GraphScreen({ route }) {
   const [mode, setMode] = useState(route?.params?.initialMode || '2d');
-  const [expr2d, setExpr2d] = useState('sin(x)');
-  const [expr3d, setExpr3d] = useState('sin(sqrt(x^2 + y^2))');
+  const [expr, setExpr] = useState('sin(x)');
+  const [inputVal, setInputVal] = useState('sin(x)');
+  const [mapping3d, setMapping3d] = useState('revolution'); // 'revolution' | 'extrusion'
   const [showDeriv, setShowDeriv] = useState(true);
   const [showIntegral, setShowIntegral] = useState(true);
+
+  // Synchronized mathematical models: 2D f(x) and 3D z=f(x,y)
+  const expr2d = useMemo(() => convert3dTo2d(expr), [expr]);
+  const expr3d = useMemo(() => convert2dTo3d(expr, mapping3d), [expr, mapping3d]);
 
   // Independent 2D Coordinate Bounds (Enables TRUE 2D Magnification & Zoom)
   const [xMin, setXMin] = useState(-6);
@@ -1176,8 +1211,6 @@ export default function GraphScreen({ route }) {
   const [yMin, setYMin] = useState(-4);
   const [yMax, setYMax] = useState(4);
 
-  const [inputVal, setInputVal] = useState('sin(x)');
-  const [input3dVal, setInput3dVal] = useState('sin(sqrt(x^2 + y^2))');
   const [colorScheme3d, setColorScheme3d] = useState('cyan');
   const [webviewKey, setWebviewKey] = useState(0);
   const [traceX, setTraceX] = useState(0);
@@ -1192,9 +1225,9 @@ export default function GraphScreen({ route }) {
     if (prefill) {
       setMode('2d');
       setInputVal(prefill);
-      setExpr2d(prefill);
+      setExpr(prefill);
       setTraceX(0);
-      autoFitBounds(prefill, -6, 6);
+      autoFitBounds(convert3dTo2d(prefill), -6, 6);
     }
     if (route?.params?.initialMode) {
       setMode(route?.params?.initialMode);
@@ -1213,17 +1246,19 @@ export default function GraphScreen({ route }) {
     }
   }
 
-  function apply2d() {
+  // Unified single-point application: updates BOTH 2D and 3D instantaneously!
+  function applyFormula(newVal) {
+    const valToApply = typeof newVal === 'string' ? newVal : inputVal;
     hapticSelect();
-    setExpr2d(inputVal);
+    setExpr(valToApply);
+    setInputVal(valToApply);
     setTraceX(0);
-    autoFitBounds(inputVal, xMin, xMax);
+    autoFitBounds(convert3dTo2d(valToApply), xMin, xMax);
+    setWebviewKey(k => k + 1);
   }
 
-  function apply3d() {
-    hapticSelect();
-    setExpr3d(input3dVal);
-    setWebviewKey(k => k + 1);
+  function selectPreset(presetFn) {
+    applyFormula(presetFn);
   }
 
   // TRUE 2D ZOOM: Zooms BOTH X and Y axes simultaneously for real magnification!
@@ -1314,7 +1349,7 @@ export default function GraphScreen({ route }) {
 
   return (
     <SafeAreaView style={gs.safe} edges={['top']}>
-      {/* Visual Mode Selector: 2D vs 3D */}
+      {/* Visual Mode Selector: 2D vs 3D vs Dual */}
       <View style={gs.modeBar}>
         <TouchableOpacity
           style={[gs.modeBtn, mode === '2d' && gs.modeBtnActive]}
@@ -1322,8 +1357,8 @@ export default function GraphScreen({ route }) {
           accessibilityRole="button"
           accessibilityLabel="Show 2D function graph"
         >
-          <Ionicons name="pulse-outline" size={16} color={mode === '2d' ? COLORS.primary : COLORS.textDim} />
-          <Text style={[gs.modeBtnText, mode === '2d' && { color: COLORS.primary }]}>2D Function &amp; Tangent</Text>
+          <Ionicons name="pulse-outline" size={15} color={mode === '2d' ? COLORS.primary : COLORS.textDim} />
+          <Text style={[gs.modeBtnText, mode === '2d' && { color: COLORS.primary }]}>2D Graph</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1332,8 +1367,18 @@ export default function GraphScreen({ route }) {
           accessibilityRole="button"
           accessibilityLabel="Show 3D multivariable surface"
         >
-          <Ionicons name="cube-outline" size={16} color={mode === '3d' ? COLORS.primary : COLORS.textDim} />
-          <Text style={[gs.modeBtnText, mode === '3d' && { color: COLORS.primary }]}>3D Three.js Surface</Text>
+          <Ionicons name="cube-outline" size={15} color={mode === '3d' ? COLORS.primary : COLORS.textDim} />
+          <Text style={[gs.modeBtnText, mode === '3d' && { color: COLORS.primary }]}>3D Surface</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[gs.modeBtn, mode === 'dual' && gs.modeBtnActive]}
+          onPress={() => { hapticSelect(); setMode('dual'); }}
+          accessibilityRole="button"
+          accessibilityLabel="Show simultaneous 2D and 3D graph"
+        >
+          <Ionicons name="copy-outline" size={15} color={mode === 'dual' ? COLORS.primary : COLORS.textDim} />
+          <Text style={[gs.modeBtnText, mode === 'dual' && { color: COLORS.primary }]}>Dual 2D+3D</Text>
         </TouchableOpacity>
       </View>
 
@@ -1347,13 +1392,34 @@ export default function GraphScreen({ route }) {
               style={gs.fnInput}
               value={inputVal}
               onChangeText={setInputVal}
-              onSubmitEditing={apply2d}
+              onSubmitEditing={() => applyFormula(inputVal)}
               autoCapitalize="none" autoCorrect={false}
               returnKeyType="done"
               placeholderTextColor={COLORS.textFaint}
             />
-            <TouchableOpacity style={gs.applyBtn} onPress={apply2d} accessibilityRole="button">
+            <TouchableOpacity style={gs.applyBtn} onPress={() => applyFormula(inputVal)} accessibilityRole="button">
               <Text style={gs.applyBtnText}>Plot</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 3D Translation Mode Pill (Shows how 2D formula maps to 3D) */}
+          <View style={gs.mappingRow}>
+            <Text style={gs.mappingLabel}>3D SURFACE FORM:</Text>
+            <TouchableOpacity
+              style={[gs.mappingBtn, mapping3d === 'revolution' && gs.mappingBtnActive]}
+              onPress={() => { hapticSelect(); setMapping3d('revolution'); setWebviewKey(k => k + 1); }}
+            >
+              <Text style={[gs.mappingBtnText, mapping3d === 'revolution' && { color: COLORS.primary }]}>
+                ↺ Revolution f(r)
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[gs.mappingBtn, mapping3d === 'extrusion' && gs.mappingBtnActive]}
+              onPress={() => { hapticSelect(); setMapping3d('extrusion'); setWebviewKey(k => k + 1); }}
+            >
+              <Text style={[gs.mappingBtnText, mapping3d === 'extrusion' && { color: COLORS.primary }]}>
+                ⇲ Extrusion z=f(x)
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -1481,7 +1547,7 @@ export default function GraphScreen({ route }) {
           </View>
 
           {/* Function Presets */}
-          <Text style={gs.presetsLabel}>STUDY FUNCTIONS</Text>
+          <Text style={gs.presetsLabel}>STUDY FUNCTIONS (UPDATES BOTH 2D &amp; 3D)</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={gs.presetsScroll}>
             {[
               { label: 'sin(x)', fn: 'sin(x)' },
@@ -1493,16 +1559,10 @@ export default function GraphScreen({ route }) {
             ].map(p => (
               <TouchableOpacity
                 key={p.fn}
-                style={gs.presetChip}
-                onPress={() => {
-                  hapticSelect();
-                  setInputVal(p.fn);
-                  setExpr2d(p.fn);
-                  setTraceX(0);
-                  autoFitBounds(p.fn, xMin, xMax);
-                }}
+                style={[gs.presetChip, expr === p.fn && gs.rangeChipActive]}
+                onPress={() => selectPreset(p.fn)}
               >
-                <Text style={gs.presetLabel}>{p.label}</Text>
+                <Text style={[gs.presetLabel, expr === p.fn && { color: COLORS.primary }]}>{p.label}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -1518,14 +1578,14 @@ export default function GraphScreen({ route }) {
           <View style={StyleSheet.absoluteFill}>
             {Platform.OS === 'web' ? (
               <iframe
-                key={`${webviewKey}-${colorScheme3d}`}
+                key={`${webviewKey}-${colorScheme3d}-${mapping3d}`}
                 srcDoc={build3dHtml(expr3d, colorScheme3d)}
                 style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#020617' }}
                 title="3D Solid Surface"
               />
             ) : (
               <WebView
-                key={`${webviewKey}-${colorScheme3d}`}
+                key={`${webviewKey}-${colorScheme3d}-${mapping3d}`}
                 originWhitelist={['*']}
                 source={{ html: build3dHtml(expr3d, colorScheme3d) }}
                 style={gs.webviewFull}
@@ -1538,33 +1598,50 @@ export default function GraphScreen({ route }) {
             )}
           </View>
 
-          {/* Floating Top Glass Bar (Formula Input & Solid Colormaps) */}
+          {/* Floating Top Glass Bar (Formula Input, Mapping & Solid Colormaps) */}
           <View style={gs.floatingGlassTop}>
             <View style={gs.inputRowGlass}>
-              <Text style={gs.fnLabelGlass}>z = f(x,y)</Text>
+              <Text style={gs.fnLabelGlass}>z =</Text>
               <TextInput
                 style={gs.fnInputGlass}
-                value={input3dVal}
-                onChangeText={setInput3dVal}
-                onSubmitEditing={apply3d}
+                value={inputVal}
+                onChangeText={setInputVal}
+                onSubmitEditing={() => applyFormula(inputVal)}
                 autoCapitalize="none" autoCorrect={false}
                 returnKeyType="done"
                 placeholderTextColor={COLORS.textFaint}
               />
-              <TouchableOpacity style={gs.applyBtnGlass} onPress={apply3d}>
+              <TouchableOpacity style={gs.applyBtnGlass} onPress={() => applyFormula(inputVal)}>
                 <Text style={gs.applyBtnTextGlass}>Plot</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Solid Color Palettes */}
+            {/* 3D Mapping Style & Solid Palettes */}
             <View style={gs.colormapRow}>
-              <Text style={gs.colormapLabel}>SOLID THEME:</Text>
+              <Text style={gs.colormapLabel}>FORM:</Text>
+              <TouchableOpacity
+                style={[gs.colormapChip, mapping3d === 'revolution' && gs.colormapChipActive]}
+                onPress={() => { hapticSelect(); setMapping3d('revolution'); setWebviewKey(k => k + 1); }}
+              >
+                <Text style={[gs.colormapChipText, mapping3d === 'revolution' && { color: COLORS.primary }]}>
+                  ↺ Revolution
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[gs.colormapChip, mapping3d === 'extrusion' && gs.colormapChipActive]}
+                onPress={() => { hapticSelect(); setMapping3d('extrusion'); setWebviewKey(k => k + 1); }}
+              >
+                <Text style={[gs.colormapChipText, mapping3d === 'extrusion' && { color: COLORS.primary }]}>
+                  ⇲ Extrusion
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={[gs.colormapLabel, { marginLeft: 6 }]}>THEME:</Text>
               {[
-                { id: 'cyan', label: 'Electric Cyan' },
-                { id: 'sunset', label: 'Sunset Magma' },
-                { id: 'emerald', label: 'Cyber Emerald' },
-                { id: 'chrome', label: 'Liquid Chrome' },
-                { id: 'ceramic', label: 'Studio White' },
+                { id: 'cyan', label: 'Electric' },
+                { id: 'sunset', label: 'Magma' },
+                { id: 'emerald', label: 'Emerald' },
+                { id: 'chrome', label: 'Chrome' },
               ].map(cm => (
                 <TouchableOpacity
                   key={cm.id}
@@ -1581,27 +1658,143 @@ export default function GraphScreen({ route }) {
 
           {/* Floating Bottom Bar with Canonical 3D Surfaces */}
           <View style={gs.floatingGlassBottom}>
-            <Text style={gs.presetHeaderGlass}>CANONICAL 3D SURFACES</Text>
+            <Text style={gs.presetHeaderGlass}>CANONICAL SURFACES (SYNCS TO 2D &amp; 3D)</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={gs.presetsScrollGlass}>
               {[
-                { label: 'Ripple Wave', fn: 'sin(sqrt(x^2 + y^2))' },
-                { label: 'Hyperbolic Saddle', fn: 'x^2 - y^2' },
-                { label: 'Paraboloid Bowl', fn: 'x^2 + y^2' },
-                { label: 'Gaussian Bell', fn: 'exp(-(x^2 + y^2))' },
-                { label: 'Trig Eggcrate', fn: 'sin(x) * cos(y)' },
-                { label: 'Monkey Saddle', fn: 'x^3 - 3*x*y^2' },
+                { label: 'Ripple Wave', fn: 'sin(x)' },
+                { label: 'Gaussian Bell', fn: 'exp(-x^2)' },
+                { label: 'Paraboloid Bowl', fn: 'x^2 - 4' },
+                { label: 'Cubic Waves', fn: 'x^3 - 3*x' },
+                { label: 'Volcano Ring', fn: '1 / (1 + x^2)' },
+                { label: 'Saddle Sheet', fn: 'x^2 - y^2' },
+                { label: 'Eggcrate Mesh', fn: 'sin(x) * cos(y)' },
               ].map(p => (
                 <TouchableOpacity
                   key={p.fn}
-                  style={gs.presetChipGlass}
-                  onPress={() => { hapticSelect(); setInput3dVal(p.fn); setExpr3d(p.fn); setWebviewKey(k => k + 1); }}
+                  style={[gs.presetChipGlass, expr === p.fn && { borderColor: COLORS.primary, backgroundColor: 'rgba(56,189,248,0.2)' }]}
+                  onPress={() => selectPreset(p.fn)}
                 >
-                  <Text style={gs.presetLabelGlass}>{p.label}</Text>
+                  <Text style={[gs.presetLabelGlass, expr === p.fn && { color: COLORS.primary }]}>{p.label}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
           </View>
         </View>
+      )}
+
+      {/* ── DUAL VISUAL MODE: SIMULTANEOUS 2D AND 3D AT THE SAME TIME ── */}
+      {mode === 'dual' && (
+        <ScrollView style={gs.scroll} showsVerticalScrollIndicator={false}>
+          {/* Unified Function Input Bar */}
+          <View style={gs.inputRow}>
+            <Text style={gs.fnLabel}>f(x) =</Text>
+            <TextInput
+              style={gs.fnInput}
+              value={inputVal}
+              onChangeText={setInputVal}
+              onSubmitEditing={() => applyFormula(inputVal)}
+              autoCapitalize="none" autoCorrect={false}
+              returnKeyType="done"
+              placeholderTextColor={COLORS.textFaint}
+            />
+            <TouchableOpacity style={gs.applyBtn} onPress={() => applyFormula(inputVal)} accessibilityRole="button">
+              <Text style={gs.applyBtnText}>Plot</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 3D Surface Mapping Mode Switch */}
+          <View style={gs.mappingRow}>
+            <Text style={gs.mappingLabel}>3D SURFACE FORM:</Text>
+            <TouchableOpacity
+              style={[gs.mappingBtn, mapping3d === 'revolution' && gs.mappingBtnActive]}
+              onPress={() => { hapticSelect(); setMapping3d('revolution'); setWebviewKey(k => k + 1); }}
+            >
+              <Text style={[gs.mappingBtnText, mapping3d === 'revolution' && { color: COLORS.primary }]}>
+                ↺ Revolution f(r)
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[gs.mappingBtn, mapping3d === 'extrusion' && gs.mappingBtnActive]}
+              onPress={() => { hapticSelect(); setMapping3d('extrusion'); setWebviewKey(k => k + 1); }}
+            >
+              <Text style={[gs.mappingBtnText, mapping3d === 'extrusion' && { color: COLORS.primary }]}>
+                ⇲ Extrusion z=f(x)
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 1. TOP CARD: 2D Interactive Function Graph */}
+          <View style={gs.dualSectionHeader}>
+            <View style={gs.dualBadge2D}><Text style={gs.dualBadgeText2D}>2D PROFILE</Text></View>
+            <Text style={gs.dualFormulaText}>y = {expr2d}</Text>
+          </View>
+
+          <View style={gs.dualGraphWrap} {...panResponder.panHandlers}>
+            <Graph2D
+              expr={expr2d}
+              showDeriv={showDeriv}
+              showIntegral={showIntegral}
+              xMin={xMin}
+              xMax={xMax}
+              yMin={yMin}
+              yMax={yMax}
+              traceX={traceX}
+              height={195}
+            />
+          </View>
+
+          {/* 2. BOTTOM CARD: 3D Interactive Surface */}
+          <View style={[gs.dualSectionHeader, { marginTop: 14 }]}>
+            <View style={gs.dualBadge3D}><Text style={gs.dualBadgeText3D}>3D SURFACE</Text></View>
+            <Text style={gs.dualFormulaText}>z = {expr3d.length > 28 ? expr3d.slice(0, 26) + '...' : expr3d}</Text>
+          </View>
+
+          <View style={gs.dual3dWrap}>
+            {Platform.OS === 'web' ? (
+              <iframe
+                key={`${webviewKey}-${colorScheme3d}-${mapping3d}`}
+                srcDoc={build3dHtml(expr3d, colorScheme3d)}
+                style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#020617' }}
+                title="3D Dual Surface"
+              />
+            ) : (
+              <WebView
+                key={`${webviewKey}-${colorScheme3d}-${mapping3d}`}
+                originWhitelist={['*']}
+                source={{ html: build3dHtml(expr3d, colorScheme3d) }}
+                style={gs.webviewDual}
+                scrollEnabled={false}
+                bounces={false}
+                javaScriptEnabled
+                domStorageEnabled
+                allowsInlineMediaPlayback
+              />
+            )}
+          </View>
+
+          {/* Presets Row */}
+          <Text style={[gs.presetsLabel, { marginTop: 14 }]}>STUDY PRESETS (UPDATES BOTH 2D &amp; 3D)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={gs.presetsScroll}>
+            {[
+              { label: 'sin(x)', fn: 'sin(x)' },
+              { label: 'x³ - 3x', fn: 'x^3 - 3*x' },
+              { label: 'e^(-x²)', fn: 'exp(-x^2)' },
+              { label: 'x² - 4', fn: 'x^2 - 4' },
+              { label: '1 / (1 + x²)', fn: '1 / (1 + x^2)' },
+              { label: 'x * sin(x)', fn: 'x * sin(x)' },
+            ].map(p => (
+              <TouchableOpacity
+                key={p.fn}
+                style={[gs.presetChip, expr === p.fn && gs.rangeChipActive]}
+                onPress={() => selectPreset(p.fn)}
+              >
+                <Text style={[gs.presetLabel, expr === p.fn && { color: COLORS.primary }]}>{p.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
       )}
     </SafeAreaView>
   );
@@ -1873,6 +2066,77 @@ const gs = StyleSheet.create({
     backgroundColor: 'rgba(125,211,252,0.1)',
   },
   presetLabelGlass: { color: COLORS.white, fontSize: 11, fontFamily: 'monospace', fontWeight: '600' },
+
+  /* ── 3D Translation & Dual Simultaneous View Styles ── */
+  mappingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  mappingLabel: { color: COLORS.textFaint, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  mappingBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  mappingBtnActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: 'rgba(56,189,248,0.18)',
+  },
+  mappingBtnText: { color: COLORS.textDim, fontSize: 10, fontWeight: '700' },
+
+  dualSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginBottom: 6,
+    marginTop: 6,
+  },
+  dualBadge2D: {
+    backgroundColor: 'rgba(56,189,248,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.4)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  dualBadgeText2D: { color: '#38bdf8', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  dualBadge3D: {
+    backgroundColor: 'rgba(192,132,252,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(192,132,252,0.4)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  dualBadgeText3D: { color: '#c084fc', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  dualFormulaText: { color: COLORS.white, fontSize: 12, fontFamily: 'monospace', fontWeight: '700' },
+  dualGraphWrap: {
+    marginHorizontal: 16,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.25)',
+    backgroundColor: '#020617',
+    height: 195,
+  },
+  dual3dWrap: {
+    marginHorizontal: 16,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(192,132,252,0.25)',
+    backgroundColor: '#020617',
+    height: 275,
+  },
+  webviewDual: { flex: 1, backgroundColor: '#020617' },
 });
 
 const s2 = StyleSheet.create({
