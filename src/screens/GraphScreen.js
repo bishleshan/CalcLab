@@ -268,7 +268,8 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   <button class="snap-btn" id="btn-top" onclick="snapView('top')">Top (X-Y)</button>
   <button class="snap-btn" id="btn-front" onclick="snapView('front')">Front (X-Z)</button>
   <button class="snap-btn" id="btn-side" onclick="snapView('side')">Side (Y-Z)</button>
-  <button class="snap-btn active" id="btn-contours" onclick="toggleContours()">Contours ◉</button>
+  <button class="snap-btn active" id="btn-surface" onclick="cycleSurfaceStyle()">Faceted ◆</button>
+  <button class="snap-btn active" id="btn-grid" onclick="cycleGrid()">Grid 50%</button>
   <button class="snap-btn" id="btn-relief" onclick="cycleRelief()">Depth 1.4×</button>
   <button class="snap-btn active" id="btn-spin" onclick="toggleSpin()">Auto ↻</button>
 </div>
@@ -506,20 +507,21 @@ surfGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 surfGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 surfGeo.setIndex(idx);
 
-// SOLID MESH PHONG MATERIAL (Semi-matte satiny sheen, no white blowout)
+// SOLID MESH PHONG MATERIAL (Physical Faceted Shading for real geometric surface texture)
 const surfMat = new THREE.MeshPhongMaterial({
   vertexColors: true,
   side: THREE.DoubleSide,
-  shininess: 32,
+  shininess: 38,
+  flatShading: true, // Physical faceted surface definition!
   opacity: 1.0,
 });
 
-// GLOWING SUBTLE WIREFRAME OVERLAY
+// GLOWING GEOMETRIC COORDINATE WIREFRAME OVERLAY
 const wireMat = new THREE.MeshBasicMaterial({
-  color: activeScheme === 'sunset' ? 0xff2d78 : activeScheme === 'emerald' ? 0x34d399 : 0x00f5ff,
+  color: activeScheme === 'sunset' ? 0xff3b82 : activeScheme === 'emerald' ? 0x10b981 : 0x00f5ff,
   wireframe: true,
   transparent: true,
-  opacity: 0.16,
+  opacity: 0.48, // Crisp glowing geometric coordinate grid lines!
 });
 
 surfGrp.add(new THREE.Mesh(surfGeo, surfMat));
@@ -555,7 +557,6 @@ function rebuildMesh() {
 
       if (showContours) {
         // Multiplicative Topographic Iso-Contour Rings (14 levels)
-        // Modulates the base color hue without blowing out to chalky white
         const isoFreq = 14.0;
         const ringVal = Math.sin(t * Math.PI * 2 * isoFreq);
         const contourFactor = 0.85 + 0.18 * ringVal;
@@ -614,10 +615,25 @@ window.toggleSpin = function() {
   document.getElementById('btn-spin').classList.toggle('active', autoRotate);
 };
 
-window.toggleContours = function() {
-  showContours = !showContours;
-  document.getElementById('btn-contours').classList.toggle('active', showContours);
-  rebuildMesh();
+let isFaceted = true;
+window.cycleSurfaceStyle = function() {
+  isFaceted = !isFaceted;
+  surfMat.flatShading = isFaceted;
+  surfMat.needsUpdate = true;
+  document.getElementById('btn-surface').textContent = isFaceted ? 'Faceted ◆' : 'Smooth ~';
+  document.getElementById('btn-surface').classList.toggle('active', isFaceted);
+};
+
+const gridLevels = [0.48, 0.85, 0.0];
+const gridLabels = ['Grid 50%', 'Grid 85%', 'Grid Off'];
+let gridIdx = 0;
+window.cycleGrid = function() {
+  gridIdx = (gridIdx + 1) % gridLevels.length;
+  wireMat.opacity = gridLevels[gridIdx];
+  wireMat.visible = gridLevels[gridIdx] > 0.01;
+  wireMat.needsUpdate = true;
+  document.getElementById('btn-grid').textContent = gridLabels[gridIdx];
+  document.getElementById('btn-grid').classList.toggle('active', gridLevels[gridIdx] > 0.01);
 };
 
 window.cycleRelief = function() {
