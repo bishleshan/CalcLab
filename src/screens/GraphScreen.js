@@ -201,7 +201,7 @@ function hapticSelect() {
 }
 
 // ─── 3D Surface Template with Topographic Contours, Elevation Legend & Z-Ruler ───
-function build3dHtml(expr, colorScheme = 'cyan') {
+function build3dHtml(expr, colorScheme = 'cyan', isDual = false) {
   const safeExpr = toSafe3dExpression(expr);
   const label = JSON.stringify(`z = ${normalizeExpression(expr || 'sin(sqrt(x^2 + y^2))')}`.slice(0, 72));
 
@@ -214,6 +214,13 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   html, body { width:100%; height:100%; background:#020617; overflow:hidden; touch-action:none; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
   canvas { display:block; width:100vw; height:100vh; }
   
+  ${isDual ? `
+  /* In Dual 2D+3D mode: Hide all overlay buttons & panels so 3D graph is clean & unobstructed */
+  #view-snap-row, #controls-overlay, #elevation-bar, #hud-top {
+    display: none !important;
+  }
+  ` : ''}
+
   #hud-top {
     position:absolute; top:124px; left:14px; right:14px; display:flex; justify-content:space-between; align-items:center;
     pointer-events:none; z-index:10;
@@ -1753,7 +1760,7 @@ export default function GraphScreen({ route }) {
             {Platform.OS === 'web' ? (
               <iframe
                 key={`${webviewKey}-${colorScheme3d}-${mapping3d}`}
-                srcDoc={build3dHtml(expr3d, colorScheme3d)}
+                srcDoc={build3dHtml(expr3d, colorScheme3d, true)}
                 style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#020617' }}
                 title="3D Dual Surface"
               />
@@ -1761,7 +1768,7 @@ export default function GraphScreen({ route }) {
               <WebView
                 key={`${webviewKey}-${colorScheme3d}-${mapping3d}`}
                 originWhitelist={['*']}
-                source={{ html: build3dHtml(expr3d, colorScheme3d) }}
+                source={{ html: build3dHtml(expr3d, colorScheme3d, true) }}
                 style={gs.webviewDual}
                 scrollEnabled={false}
                 bounces={false}
