@@ -268,6 +268,7 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   <button class="snap-btn" id="btn-top" onclick="snapView('top')">Top (X-Y)</button>
   <button class="snap-btn" id="btn-front" onclick="snapView('front')">Front (X-Z)</button>
   <button class="snap-btn" id="btn-side" onclick="snapView('side')">Side (Y-Z)</button>
+  <button class="snap-btn active" id="btn-colormode" onclick="cycleColorMode()">Solid ◼</button>
   <button class="snap-btn active" id="btn-surface" onclick="cycleSurfaceStyle()">Faceted ◆</button>
   <button class="snap-btn active" id="btn-grid" onclick="cycleGrid()">Grid 50%</button>
   <button class="snap-btn" id="btn-relief" onclick="cycleRelief()">Depth 1.4×</button>
@@ -317,32 +318,35 @@ const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
-// ─── Balanced Multi-Directional Grazing Lighting System ────────
-scene.add(new THREE.AmbientLight(0x0a1628, 0.5));
+// ─── Dynamic View-Dependent & Multi-Angle Lighting System ────────
+// 1. Camera-mounted Eye-Light (shifts specular glints and reflections dynamically as you rotate!)
+const camLight = new THREE.DirectionalLight(0xffffff, 1.2);
+camLight.position.set(0, 2, 4);
+camera.add(camLight);
+scene.add(camera);
 
-// Primary Grazing Directional Light (Hits ripples from ~25 deg side elevation)
-const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
-sunLight.position.set(6, 4.0, 5);
-scene.add(sunLight);
+// 2. East flank reflects Electric Cyan
+const lightEast = new THREE.DirectionalLight(0x00f5ff, 2.2);
+lightEast.position.set(7, 3.5, 5);
+scene.add(lightEast);
 
-// Opposing Colored Rim Light
-const rimDirLight = new THREE.DirectionalLight(0x00f5ff, 0.85);
-rimDirLight.position.set(-6, 3.0, -4);
-scene.add(rimDirLight);
+// 3. West flank reflects Hot Magenta Pink (opposite angle has contrasting sheen!)
+const lightWest = new THREE.DirectionalLight(0xff2d78, 1.8);
+lightWest.position.set(-7, 3.5, -5);
+scene.add(lightWest);
 
-// Valley Warm Fill Light
-const warmLight = new THREE.DirectionalLight(0xff2d78, 0.65);
-warmLight.position.set(4, 2.0, -5);
-scene.add(warmLight);
+// 4. North flank reflects Deep Purple Rim
+const lightNorth = new THREE.DirectionalLight(0xa855f7, 1.3);
+lightNorth.position.set(0, 5, -7);
+scene.add(lightNorth);
 
-// Orbiting Cyan Key PointLight
-const pl1 = new THREE.PointLight(0x00f5ff, 1.2, 18);
+// 5. Deep Ambient base
+scene.add(new THREE.AmbientLight(0x081528, 0.45));
+
+// 6. Orbiting Cyan Key PointLight
+const pl1 = new THREE.PointLight(0x00f5ff, 1.4, 20);
 pl1.position.set(4, 4.5, 4);
 scene.add(pl1);
-
-const pl2 = new THREE.PointLight(0xff2d78, 0.8, 16);
-pl2.position.set(-4, -3, 3);
-scene.add(pl2);
 
 // GridHelper
 const grid = new THREE.GridHelper(8, 28, 0x002838, 0x001420);
@@ -507,13 +511,24 @@ surfGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 surfGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 surfGeo.setIndex(idx);
 
-// SOLID MESH PHONG MATERIAL (Physical Faceted Shading for real geometric surface texture)
-const surfMat = new THREE.MeshPhongMaterial({
-  vertexColors: true,
+function getSolidHex(scheme) {
+  if (scheme === 'sunset') return 0xd91448; // Solid Crimson Ruby
+  if (scheme === 'emerald') return 0x059669; // Solid Deep Emerald
+  if (scheme === 'chrome') return 0x334155; // Solid Titanium Chrome
+  if (scheme === 'ceramic') return 0xe2e8f0; // Solid Studio White
+  return 0x0284c7; // Solid Electric Cyan
+}
+
+// SOLID MESH PHYSICAL MATERIAL with Lacquer Clearcoat for Dynamic Multi-Angle Reflections
+const surfMat = new THREE.MeshPhysicalMaterial({
+  color: getSolidHex(activeScheme),
+  roughness: activeScheme === 'chrome' ? 0.08 : 0.18,
+  metalness: activeScheme === 'chrome' ? 0.85 : 0.32,
+  clearcoat: 1.0,
+  clearcoatRoughness: 0.08,
+  reflectivity: 0.95,
   side: THREE.DoubleSide,
-  shininess: 38,
   flatShading: true, // Physical faceted surface definition!
-  opacity: 1.0,
 });
 
 // GLOWING GEOMETRIC COORDINATE WIREFRAME OVERLAY
@@ -536,12 +551,30 @@ if (elevGrad) {
     elevGrad.style.background = 'linear-gradient(to bottom, #a7f3d0, #34d399, #10b981, #047857, #022c22)';
   } else if (activeScheme === 'ceramic') {
     elevGrad.style.background = 'linear-gradient(to bottom, #ffffff, #cbd5e1, #94a3b8, #475569, #0f172a)';
+  } else if (activeScheme === 'chrome') {
+    elevGrad.style.background = 'linear-gradient(to bottom, #f8fafc, #94a3b8, #475569, #1e293b, #020617)';
   } else {
     elevGrad.style.background = 'linear-gradient(to bottom, #e0faff, #00d4ff, #0077ff, #1040c0, #030a24)';
   }
 }
 
+let colorMode = 'solid'; // 'solid' by default as requested!
+
 function rebuildMesh() {
+  if (colorMode === 'solid') {
+    surfMat.vertexColors = false;
+    surfMat.color.setHex(getSolidHex(activeScheme));
+    surfMat.roughness = activeScheme === 'chrome' ? 0.08 : 0.18;
+    surfMat.metalness = activeScheme === 'chrome' ? 0.85 : 0.32;
+    surfMat.needsUpdate = true;
+  } else {
+    surfMat.vertexColors = true;
+    surfMat.color.setHex(0xffffff);
+    surfMat.roughness = 0.25;
+    surfMat.metalness = 0.2;
+    surfMat.needsUpdate = true;
+  }
+
   let v = 0;
   for (let i = 0; i <= NS; i++) {
     for (let j = 0; j <= NS; j++) {
@@ -552,22 +585,23 @@ function rebuildMesh() {
       pos[v + 1] = zVal * reliefFactor;
       pos[v + 2] = y;
 
-      const t = Math.max(0, Math.min(1, (zVal - zMin) / zRange));
-      const baseCol = getBaseColor(activeScheme, t);
-
-      if (showContours) {
-        // Multiplicative Topographic Iso-Contour Rings (14 levels)
-        const isoFreq = 14.0;
-        const ringVal = Math.sin(t * Math.PI * 2 * isoFreq);
-        const contourFactor = 0.85 + 0.18 * ringVal;
-
-        colors[v]     = Math.min(1.0, baseCol[0] * contourFactor);
-        colors[v + 1] = Math.min(1.0, baseCol[1] * contourFactor);
-        colors[v + 2] = Math.min(1.0, baseCol[2] * contourFactor);
-      } else {
-        colors[v]     = baseCol[0];
-        colors[v + 1] = baseCol[1];
-        colors[v + 2] = baseCol[2];
+      if (colorMode !== 'solid') {
+        const t = Math.max(0, Math.min(1, (zVal - zMin) / zRange));
+        if (colorMode === 'stepped') {
+          // 7 discrete solid color tiers
+          const numTiers = 7;
+          const tier = Math.min(numTiers - 1, Math.floor(t * numTiers));
+          const tierT = (tier + 0.5) / numTiers;
+          const tierCol = getBaseColor(activeScheme, tierT);
+          colors[v]     = tierCol[0];
+          colors[v + 1] = tierCol[1];
+          colors[v + 2] = tierCol[2];
+        } else {
+          const baseCol = getBaseColor(activeScheme, t);
+          colors[v]     = baseCol[0];
+          colors[v + 1] = baseCol[1];
+          colors[v + 2] = baseCol[2];
+        }
       }
 
       v += 3;
@@ -575,7 +609,9 @@ function rebuildMesh() {
   }
 
   surfGeo.attributes.position.needsUpdate = true;
-  surfGeo.attributes.color.needsUpdate = true;
+  if (colorMode !== 'solid') {
+    surfGeo.attributes.color.needsUpdate = true;
+  }
   surfGeo.computeVertexNormals();
 
   // Update Elevation Scale readout
@@ -613,6 +649,20 @@ window.resetAll = function() {
 window.toggleSpin = function() {
   autoRotate = !autoRotate;
   document.getElementById('btn-spin').classList.toggle('active', autoRotate);
+};
+
+const colorModes = ['solid', 'stepped', 'gradient'];
+const colorModeLabels = {
+  'solid': 'Solid ◼',
+  'stepped': 'Stepped ▦',
+  'gradient': 'Gradient ☲'
+};
+
+window.cycleColorMode = function() {
+  const nextIdx = (colorModes.indexOf(colorMode) + 1) % colorModes.length;
+  colorMode = colorModes[nextIdx];
+  document.getElementById('btn-colormode').textContent = colorModeLabels[colorMode];
+  rebuildMesh();
 };
 
 let isFaceted = true;
@@ -1273,6 +1323,7 @@ export default function GraphScreen({ route }) {
                 { id: 'cyan', label: 'Electric Cyan' },
                 { id: 'sunset', label: 'Sunset Magma' },
                 { id: 'emerald', label: 'Cyber Emerald' },
+                { id: 'chrome', label: 'Liquid Chrome' },
                 { id: 'ceramic', label: 'Studio White' },
               ].map(cm => (
                 <TouchableOpacity
