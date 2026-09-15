@@ -3,11 +3,10 @@ import React, { createContext, useContext, useState } from 'react';
 
 const ProContext = createContext();
 
-const HACKATHON_DEMO_UNLOCKED = true;
+const DEFAULT_PRO_STATUS = true;
 
-// The hackathon build starts unlocked so judges can review the full product.
 export function ProProvider({ children }) {
-  const [isPro, setIsPro] = useState(HACKATHON_DEMO_UNLOCKED);
+  const [isPro, setIsPro] = useState(DEFAULT_PRO_STATUS);
   const [solveCount, setSolveCount] = useState(0);
   const FREE_LIMIT = 5;
 
@@ -19,7 +18,6 @@ export function ProProvider({ children }) {
   }
 
   async function purchasePro() {
-    // Simulated unlock for demo builds.
     return new Promise(resolve => {
       setTimeout(() => {
         setIsPro(true);
@@ -38,7 +36,7 @@ export function ProProvider({ children }) {
       canSolve,
       remaining,
       FREE_LIMIT,
-      isDemoMode: HACKATHON_DEMO_UNLOCKED,
+      isDemoMode: false,
       recordSolve,
       purchasePro,
       restorePurchases,

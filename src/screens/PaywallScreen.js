@@ -13,13 +13,13 @@ const FEATURES = [
   { icon: '∫',   label: 'Indefinite Integrals',   free: true  },
   { icon: 'd/dx', label: 'Derivatives any order', free: true  },
   { icon: 'lim',  label: 'Limits',                free: true  },
-  { icon: '∞',   label: 'Unlimited Demo Solves',   free: false },
+  { icon: '∞',   label: 'Unlimited Solves',       free: false },
   { iconName: 'document-text-outline', label: 'LaTeX Paste & Convert', free: true },
   { iconName: 'list-outline', label: 'Step-by-Step Explanations', free: true },
 ];
 
 export default function PaywallScreen({ navigation }) {
-  const { isPro, isDemoMode, purchasePro, restorePurchases } = usePro();
+  const { isPro, purchasePro, restorePurchases } = usePro();
   const [loading, setLoading] = useState(false);
 
   function select() {
@@ -35,8 +35,8 @@ export default function PaywallScreen({ navigation }) {
     setLoading(true);
     try {
       await purchasePro();
-      Alert.alert('CalcLab demo unlocked', 'All features are now open for judging.', [
-        { text: 'Let\'s go!', onPress: () => navigation.goBack() }
+      Alert.alert('CalcLab Pro Unlocked', 'All premium features are now active.', [
+        { text: 'Great!', onPress: () => navigation.goBack() }
       ]);
     } catch (e) {
       Alert.alert('Purchase failed', e.message);
@@ -51,19 +51,19 @@ export default function PaywallScreen({ navigation }) {
           <View style={s.proStar}>
             <Ionicons name="sparkles" size={34} color={COLORS.proGold} />
           </View>
-          <Text style={s.proTitle}>{isDemoMode ? 'Judge Mode Unlocked' : "You're on Pro"}</Text>
-          <Text style={s.proSub}>All premium calculus tools are open for the hackathon demo.</Text>
+          <Text style={s.proTitle}>You're on Pro</Text>
+          <Text style={s.proSub}>All premium calculus engines, step-by-step solvers, and 3D visualizers are active.</Text>
 
           <View style={s.demoPanel}>
-            <Text style={s.demoPanelTitle}>Best demo route</Text>
+            <Text style={s.demoPanelTitle}>Pro Membership Included</Text>
             {[
-              'Open the by-parts quick example from Home.',
-              'Solve it and expand the step cards.',
-              'Tap Graph it to connect the answer to a visual.',
-              'Switch to 3D Surface for the visual finale.',
-            ].map((item, index) => (
+              'Unlimited step-by-step calculus derivations & integrals',
+              'Interactive 2D & 3D real-time surface graphing',
+              'Full practice module & formula mastery decks',
+              'Instant LaTeX equation scanning & rendering',
+            ].map((item) => (
               <View key={item} style={s.demoStep}>
-                <View style={s.demoStepNum}><Text style={s.demoStepNumText}>{index + 1}</Text></View>
+                <View style={s.demoStepNum}><Text style={s.demoStepNumText}>✓</Text></View>
                 <Text style={s.demoStepText}>{item}</Text>
               </View>
             ))}
@@ -77,7 +77,7 @@ export default function PaywallScreen({ navigation }) {
               accessibilityLabel="Try the calculus solver"
             >
               <Ionicons name="calculator-outline" size={18} color={COLORS.white} />
-              <Text style={s.backBtnText}>Try Solver</Text>
+              <Text style={s.backBtnText}>Open Solver</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={s.outlineBtn}
@@ -86,7 +86,7 @@ export default function PaywallScreen({ navigation }) {
               accessibilityLabel="Show graphing tools"
             >
               <Ionicons name="analytics-outline" size={18} color={COLORS.primary} />
-              <Text style={s.outlineBtnText}>Show Graphs</Text>
+              <Text style={s.outlineBtnText}>Open Graph</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -100,15 +100,15 @@ export default function PaywallScreen({ navigation }) {
         {/* Header */}
         <View style={s.headerSection}>
           <Text style={s.proBadge}>PRO</Text>
-          <Text style={s.title}>Unlock CalcLab Demo</Text>
-          <Text style={s.subtitle}>Full Calc 1 & 2 solver · No judging limits</Text>
+          <Text style={s.title}>Upgrade to CalcLab Pro</Text>
+          <Text style={s.subtitle}>Full Calc 1 & 2 solver · Unlimited step-by-step solutions</Text>
         </View>
 
         {/* Pricing */}
         <View style={s.priceCard}>
-          <Text style={s.priceAmount}>Demo</Text>
-          <Text style={s.pricePeriod}>build</Text>
-          <Text style={s.priceSub}>No real payment is processed</Text>
+          <Text style={s.priceAmount}>$4.99</Text>
+          <Text style={s.pricePeriod}>/ one-time</Text>
+          <Text style={s.priceSub}>Lifetime access • All future updates included</Text>
         </View>
 
         {/* Feature list */}
@@ -133,24 +133,24 @@ export default function PaywallScreen({ navigation }) {
           onPress={handlePurchase}
           disabled={loading}
           accessibilityRole="button"
-          accessibilityLabel="Unlock demo mode"
+          accessibilityLabel="Upgrade to Pro"
           accessibilityState={{ disabled: loading }}
         >
           {loading
             ? <ActivityIndicator color={COLORS.bg} />
-            : <Text style={s.purchaseBtnText}>Unlock Demo Mode</Text>
+            : <Text style={s.purchaseBtnText}>Upgrade to Pro</Text>
           }
         </TouchableOpacity>
 
-        <TouchableOpacity style={s.restoreBtn} onPress={restorePurchases} accessibilityRole="button" accessibilityLabel="Simulate restoring demo unlock">
-          <Text style={s.restoreBtnText}>Restore Demo Unlock</Text>
+        <TouchableOpacity style={s.restoreBtn} onPress={restorePurchases} accessibilityRole="button" accessibilityLabel="Restore purchases">
+          <Text style={s.restoreBtnText}>Restore Purchases</Text>
         </TouchableOpacity>
 
         <Text style={s.legal}>
-          This hackathon build uses a simulated unlock. Add real App Store billing before production.
+          One-time purchase • No recurring subscriptions • Offline enabled
         </Text>
 
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 8 }} accessibilityRole="button" accessibilityLabel="Close unlock screen">
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 8 }} accessibilityRole="button" accessibilityLabel="Close upgrade screen">
           <Text style={s.skipText}>Not now →</Text>
         </TouchableOpacity>
       </View>

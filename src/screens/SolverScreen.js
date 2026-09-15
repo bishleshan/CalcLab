@@ -163,8 +163,9 @@ export default function SolverScreen({ navigation, route }) {
             </TouchableOpacity>
           )}
           {isPro && (
-            <View style={[s.quotaBadge, { borderColor: COLORS.proGold }]}>
-              <Text style={[s.quotaText, { color: COLORS.proGold }]}>Judge mode: unlimited solves</Text>
+            <View style={[s.quotaBadge, { borderColor: 'rgba(255, 215, 0, 0.35)', backgroundColor: 'rgba(255, 215, 0, 0.08)', flexDirection: 'row', alignItems: 'center' }]}>
+              <Ionicons name="sparkles" size={12} color={COLORS.proGold} style={{ marginRight: 5 }} />
+              <Text style={[s.quotaText, { color: COLORS.proGold, fontWeight: '700' }]}>PRO · Unlimited Solves</Text>
             </View>
           )}
 
