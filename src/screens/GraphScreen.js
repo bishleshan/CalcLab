@@ -170,7 +170,7 @@ function hapticSelect() {
   Haptics.selectionAsync().catch(() => {});
 }
 
-// ─── 3D Surface Template Matching Web App Graph3D.js Exactly ───
+// ─── 3D Surface Template with Topographic Contours & Grazing Hillshading ───
 function build3dHtml(expr, colorScheme = 'cyan') {
   const safeExpr = toSafe3dExpression(expr);
   const label = JSON.stringify(`z = ${normalizeExpression(expr || 'sin(sqrt(x^2 + y^2))')}`.slice(0, 72));
@@ -189,13 +189,13 @@ function build3dHtml(expr, colorScheme = 'cyan') {
     pointer-events:none;
   }
   .hud-badge {
-    background:rgba(8,16,36,0.9); border:1px solid rgba(125,211,252,0.25); border-radius:8px;
+    background:rgba(8,16,36,0.92); border:1px solid rgba(125,211,252,0.3); border-radius:8px;
     padding:6px 12px; font-size:11px; color:#7dd3fc; font-weight:700; backdrop-filter:blur(12px);
     box-shadow:0 4px 14px rgba(0,0,0,0.5); pointer-events:auto;
   }
   .axis-legend {
-    display:flex; gap:10px; align-items:center; background:rgba(8,16,36,0.9);
-    border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:6px 12px;
+    display:flex; gap:10px; align-items:center; background:rgba(8,16,36,0.92);
+    border:1px solid rgba(255,255,255,0.14); border-radius:8px; padding:6px 12px;
     font-size:10px; color:#fff; pointer-events:auto; box-shadow:0 4px 14px rgba(0,0,0,0.5);
   }
   .axis-tag { display:flex; align-items:center; gap:4px; font-weight:800; }
@@ -207,7 +207,7 @@ function build3dHtml(expr, colorScheme = 'cyan') {
     position:absolute; bottom:82px; right:14px; display:flex; flex-direction:column; gap:8px; pointer-events:auto;
   }
   .ctrl-btn {
-    width:38px; height:38px; border-radius:10px; background:rgba(8,18,40,0.92);
+    width:38px; height:38px; border-radius:10px; background:rgba(8,18,40,0.94);
     border:1px solid rgba(125,211,252,0.35); color:#fff; font-size:18px; font-weight:800;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
     box-shadow:0 4px 16px rgba(0,0,0,0.6); user-select:none;
@@ -215,15 +215,15 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   .ctrl-btn:active { background:rgba(56,189,248,0.35); transform:scale(0.94); }
   
   #view-snap-row {
-    position:absolute; bottom:82px; left:14px; display:flex; gap:6px; pointer-events:auto;
+    position:absolute; bottom:82px; left:14px; display:flex; gap:6px; flex-wrap:wrap; max-width:calc(100vw - 80px); pointer-events:auto;
   }
   .snap-btn {
-    background:rgba(8,18,40,0.9); border:1px solid rgba(255,255,255,0.15);
-    border-radius:8px; padding:6px 10px; font-size:10px; color:rgba(255,255,255,0.85);
+    background:rgba(8,18,40,0.92); border:1px solid rgba(255,255,255,0.18);
+    border-radius:8px; padding:6px 10px; font-size:10px; color:rgba(255,255,255,0.9);
     font-weight:700; cursor:pointer; user-select:none; box-shadow:0 4px 14px rgba(0,0,0,0.5);
   }
   .snap-btn:active { background:rgba(56,189,248,0.3); color:#7dd3fc; }
-  .snap-btn.active { border-color:#38bdf8; color:#38bdf8; background:rgba(56,189,248,0.15); }
+  .snap-btn.active { border-color:#38bdf8; color:#38bdf8; background:rgba(56,189,248,0.18); }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -242,6 +242,8 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   <button class="snap-btn active" id="btn-iso" onclick="snapView('iso')">3D Iso</button>
   <button class="snap-btn" id="btn-top" onclick="snapView('top')">Top (X-Y)</button>
   <button class="snap-btn" id="btn-side" onclick="snapView('side')">Side (X-Z)</button>
+  <button class="snap-btn active" id="btn-contours" onclick="toggleContours()">Contours ◉</button>
+  <button class="snap-btn" id="btn-relief" onclick="cycleRelief()">Depth 1.4×</button>
   <button class="snap-btn active" id="btn-spin" onclick="toggleSpin()">Auto ↻</button>
 </div>
 
@@ -254,6 +256,10 @@ function build3dHtml(expr, colorScheme = 'cyan') {
 <script>
 const angleHud = document.getElementById('angle-hud');
 let autoRotate = true;
+let showContours = true;
+const reliefLevels = [1.0, 1.4, 2.0];
+let reliefIdx = 1;
+let reliefFactor = reliefLevels[reliefIdx];
 
 function fExpr(x, y) {
   try {
@@ -264,7 +270,7 @@ function fExpr(x, y) {
 
 const activeScheme = ${JSON.stringify(colorScheme)};
 
-// ─── Initialize Three.js matching Graph3D.js from Web App ───────
+// ─── Initialize Three.js matching Graph3D.js with Grazing Hillshading ───
 const scene = new THREE.Scene();
 const W = window.innerWidth, H = window.innerHeight;
 const camera = new THREE.PerspectiveCamera(48, W / H, 0.1, 100);
@@ -275,7 +281,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setSize(W, H);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.25;
+renderer.toneMappingExposure = 1.3;
 renderer.setClearColor(0x020617, 1);
 document.body.appendChild(renderer.domElement);
 
@@ -284,28 +290,43 @@ const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
-// Dynamic Multi-Point Lighting System matching Graph3D.js
-scene.add(new THREE.AmbientLight(0x1a3344, 1.6));
-const pl1 = new THREE.PointLight(0x00f5ff, 3.8, 22); // Orbiting Cyan Key Light
+// ─── High-Relief Grazing Directional & Multi-Point Lighting System ───
+// Ambient light: Soft dark fill so depth shadows on slopes are deep and visible from top
+scene.add(new THREE.AmbientLight(0x0a1628, 0.75));
+
+// Primary Grazing Directional Sun Light (Strikes surface at ~25 deg elevation)
+// Creates natural hillshading relief: windward ripple slopes glow, leeward slopes shade
+const sunLight = new THREE.DirectionalLight(0xffffff, 2.8);
+sunLight.position.set(7, 3.6, 6);
+scene.add(sunLight);
+
+// Secondary Grazing Rim Light on opposite flank
+const rimDirLight = new THREE.DirectionalLight(0x00f5ff, 1.8);
+rimDirLight.position.set(-7, 2.5, -5);
+scene.add(rimDirLight);
+
+// Warm Fill Light for underlighting valleys
+const warmLight = new THREE.DirectionalLight(0xff2d78, 1.4);
+warmLight.position.set(4, 2.0, -5);
+scene.add(warmLight);
+
+// Orbiting Cyan Key PointLight from Graph3D.js
+const pl1 = new THREE.PointLight(0x00f5ff, 3.2, 22);
 pl1.position.set(4, 5, 4);
 scene.add(pl1);
 
-const pl2 = new THREE.PointLight(0xff2d78, 2.8, 20); // Pink Fill Light
+const pl2 = new THREE.PointLight(0xff2d78, 2.2, 20);
 pl2.position.set(-4, -3, 3);
 scene.add(pl2);
 
-const pl3 = new THREE.PointLight(0xa855f7, 1.8, 16); // Purple Rim Light
-pl3.position.set(0, 6, -5);
-scene.add(pl3);
-
-// GridHelper matching Graph3D.js
+// GridHelper
 const grid = new THREE.GridHelper(8, 28, 0x002838, 0x001420);
 grid.material.transparent = true;
 grid.material.opacity = 0.55;
 grid.position.y = -2.2;
 scene.add(grid);
 
-// 3D Sprite Axis Labels matching Graph3D.js
+// 3D Sprite Axis Labels
 function makeLabel(text, pos, color) {
   const c = document.createElement('canvas');
   c.width = 64; c.height = 32;
@@ -333,7 +354,7 @@ scene.add(new THREE.Line(axGeoX, new THREE.LineBasicMaterial({ color: 0x00f5ff, 
 scene.add(new THREE.Line(axGeoY, new THREE.LineBasicMaterial({ color: 0xff2d78, opacity: 0.6, transparent: true })));
 scene.add(new THREE.Line(axGeoZ, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.6, transparent: true })));
 
-// 250 Glowing Space Particles matching Graph3D.js
+// 250 Glowing Space Particles
 const pGeo = new THREE.BufferGeometry();
 const pPos = [], pCol = [];
 for (let i = 0; i < 250; i++) {
@@ -346,20 +367,70 @@ pGeo.setAttribute('color', new THREE.Float32BufferAttribute(pCol, 3));
 const pMat = new THREE.PointsMaterial({ size: 0.045, vertexColors: true, transparent: true, opacity: 0.55 });
 scene.add(new THREE.Points(pGeo, pMat));
 
-// Solid Dual-Mesh Mathematical Surface Group
+// ─── 5-Stop Scientific & Cosmic Colormaps ─────────────────────
+function lerp(a, b, u) { return a + (b - a) * u; }
+function lerp3(c1, c2, u) {
+  return [lerp(c1[0], c2[0], u), lerp(c1[1], c2[1], u), lerp(c1[2], c2[2], u)];
+}
+function sampleStops(stops, u) {
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (u >= stops[i].t && u <= stops[i + 1].t) {
+      const frac = (u - stops[i].t) / (stops[i + 1].t - stops[i].t);
+      return lerp3(stops[i].c, stops[i + 1].c, frac);
+    }
+  }
+  return stops[stops.length - 1].c;
+}
+
+function getBaseColor(scheme, u) {
+  if (scheme === 'sunset') {
+    return sampleStops([
+      { t: 0.00, c: [0.08, 0.02, 0.18] }, // deep midnight plum
+      { t: 0.25, c: [0.65, 0.08, 0.60] }, // intense magenta
+      { t: 0.50, c: [0.95, 0.18, 0.30] }, // fiery coral
+      { t: 0.75, c: [1.00, 0.65, 0.10] }, // bright neon amber
+      { t: 1.00, c: [1.00, 0.98, 0.65] }, // sunburst golden white
+    ], u);
+  } else if (scheme === 'emerald') {
+    return sampleStops([
+      { t: 0.00, c: [0.01, 0.10, 0.16] }, // deep abyssal teal
+      { t: 0.25, c: [0.03, 0.38, 0.35] }, // dark seafoam
+      { t: 0.50, c: [0.06, 0.85, 0.45] }, // vivid emerald
+      { t: 0.75, c: [0.65, 0.98, 0.22] }, // radiant lime
+      { t: 1.00, c: [0.92, 1.00, 0.88] }, // glowing mint white
+    ], u);
+  } else if (scheme === 'ceramic') {
+    return sampleStops([
+      { t: 0.00, c: [0.08, 0.11, 0.18] }, // obsidian slate
+      { t: 0.25, c: [0.25, 0.32, 0.42] }, // graphite steel
+      { t: 0.50, c: [0.55, 0.62, 0.72] }, // satin chrome
+      { t: 0.75, c: [0.82, 0.86, 0.92] }, // polished platinum
+      { t: 1.00, c: [1.00, 1.00, 1.00] }, // pure specular white
+    ], u);
+  } else {
+    // Electric Cyan & Ocean Wave Depths
+    return sampleStops([
+      { t: 0.00, c: [0.01, 0.05, 0.22] }, // deep abyss midnight blue
+      { t: 0.25, c: [0.06, 0.28, 0.82] }, // royal sapphire
+      { t: 0.50, c: [0.00, 0.88, 1.00] }, // electric cyan
+      { t: 0.75, c: [0.25, 0.96, 0.85] }, // aquamarine
+      { t: 1.00, c: [0.95, 1.00, 1.00] }, // radiant glowing white
+    ], u);
+  }
+}
+
+// ─── Dual-Mesh Mathematical Surface Group ───────────────────
 const surfGrp = new THREE.Group();
 scene.add(surfGrp);
 
-const NS = 48;
-const RANGE = 3.2;
+const NS = 64; // High resolution for silky circular wave ripples
 const cnt = (NS + 1) * (NS + 1);
 const pos = new Float32Array(cnt * 3);
 const colors = new Float32Array(cnt * 3);
 const idx = [];
-let k = 0, v = 0;
-let zMin = Infinity, zMax = -Infinity;
 
 const heights = [];
+let zMin = Infinity, zMax = -Infinity;
 for (let i = 0; i <= NS; i++) {
   const row = [];
   for (let j = 0; j <= NS; j++) {
@@ -374,40 +445,6 @@ for (let i = 0; i <= NS; i++) {
 }
 const zRange = zMax - zMin || 1;
 
-for (let i = 0; i <= NS; i++) {
-  for (let j = 0; j <= NS; j++) {
-    const x = (i / NS - 0.5) * 6;
-    const zVal = heights[i][j];
-    const y = (j / NS - 0.5) * 6;
-    pos[v] = x;
-    pos[v + 1] = zVal * 0.62;
-    pos[v + 2] = y;
-
-    const t = Math.max(0, Math.min(1, (zVal - zMin) / zRange));
-    if (activeScheme === 'sunset') {
-      // Solid Sunset / Magma
-      colors[v] = 0.28 + 0.7 * t;
-      colors[v + 1] = 0.05 + 0.65 * t * t;
-      colors[v + 2] = 0.85 * (1.0 - t * 0.7);
-    } else if (activeScheme === 'emerald') {
-      // Solid Cyber Emerald
-      colors[v] = 0.08 + 0.8 * t * t;
-      colors[v + 1] = 0.4 + 0.6 * t;
-      colors[v + 2] = 0.7 * (1.0 - t * 0.7);
-    } else if (activeScheme === 'ceramic') {
-      // Solid Studio White / Porcelain
-      const val = 0.85 + 0.15 * t;
-      colors[v] = val * 0.95; colors[v + 1] = val * 0.98; colors[v + 2] = val;
-    } else {
-      // Solid Electric Blue / Cyber Cyan matching Graph3D.js
-      colors[v] = t * 0.12;
-      colors[v + 1] = 0.38 + t * 0.58;
-      colors[v + 2] = 0.78 + t * 0.22;
-    }
-    v += 3; k++;
-  }
-}
-
 for (let i = 0; i < NS; i++) {
   for (let j = 0; j < NS; j++) {
     const a = i * (NS + 1) + j, b = a + 1, c = (i + 1) * (NS + 1) + j, d = c + 1;
@@ -419,33 +456,75 @@ const surfGeo = new THREE.BufferGeometry();
 surfGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 surfGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 surfGeo.setIndex(idx);
-surfGeo.computeVertexNormals();
 
 // SOLID MESH PHONG MATERIAL (100% Opaque Solid with Specular Sheen)
 const surfMat = new THREE.MeshPhongMaterial({
   vertexColors: true,
   side: THREE.DoubleSide,
-  shininess: 95,
+  shininess: 90,
   opacity: 1.0,
 });
 
-// GLOWING WIREFRAME OVERLAY matching Graph3D.js
+// GLOWING SUBTLE WIREFRAME OVERLAY
 const wireMat = new THREE.MeshBasicMaterial({
   color: activeScheme === 'sunset' ? 0xff2d78 : activeScheme === 'emerald' ? 0x34d399 : 0x00f5ff,
   wireframe: true,
   transparent: true,
-  opacity: 0.35,
+  opacity: 0.18,
 });
 
 surfGrp.add(new THREE.Mesh(surfGeo, surfMat));
 surfGrp.add(new THREE.Mesh(surfGeo, wireMat));
+
+function rebuildMesh() {
+  let v = 0;
+  for (let i = 0; i <= NS; i++) {
+    for (let j = 0; j <= NS; j++) {
+      const x = (i / NS - 0.5) * 6;
+      const zVal = heights[i][j];
+      const y = (j / NS - 0.5) * 6;
+      pos[v] = x;
+      pos[v + 1] = zVal * reliefFactor;
+      pos[v + 2] = y;
+
+      const t = Math.max(0, Math.min(1, (zVal - zMin) / zRange));
+      const baseCol = getBaseColor(activeScheme, t);
+
+      if (showContours) {
+        // Topographic Iso-Elevation Contour Bands (16 distinct levels)
+        // Delineates circular ripple wavefronts so they POP from directly above!
+        const isoFreq = 16.0;
+        const ringPhase = t * isoFreq;
+        const frac = ringPhase - Math.floor(ringPhase);
+        const groove = Math.pow(Math.sin(frac * Math.PI), 0.32);
+        const ridge = Math.exp(-Math.pow((frac - 0.5) / 0.11, 2));
+
+        colors[v]     = Math.min(1, baseCol[0] * (0.65 + 0.35 * groove) + 0.32 * ridge);
+        colors[v + 1] = Math.min(1, baseCol[1] * (0.65 + 0.35 * groove) + 0.32 * ridge);
+        colors[v + 2] = Math.min(1, baseCol[2] * (0.65 + 0.35 * groove) + 0.32 * ridge);
+      } else {
+        colors[v]     = baseCol[0];
+        colors[v + 1] = baseCol[1];
+        colors[v + 2] = baseCol[2];
+      }
+
+      v += 3;
+    }
+  }
+
+  surfGeo.attributes.position.needsUpdate = true;
+  surfGeo.attributes.color.needsUpdate = true;
+  surfGeo.computeVertexNormals();
+}
+
+rebuildMesh();
 
 // ─── Interaction & Camera Controls ───────────────────────────
 function updateAngleHud() {
   const theta = Math.round(((controls.getAzimuthalAngle() * 180 / Math.PI) + 360) % 360);
   const phi = Math.round((controls.getPolarAngle() * 180 / Math.PI));
   let viewName = '3D Angle';
-  if (phi < 18) viewName = 'Top (X-Y)';
+  if (phi < 18) viewName = 'Top View (X-Y) · Hillshaded';
   else if (Math.abs(phi - 90) < 12) viewName = 'Side Profile';
   else viewName = '3D Iso';
   angleHud.textContent = viewName + ' · ' + theta + '°';
@@ -471,6 +550,19 @@ window.toggleSpin = function() {
   document.getElementById('btn-spin').classList.toggle('active', autoRotate);
 };
 
+window.toggleContours = function() {
+  showContours = !showContours;
+  document.getElementById('btn-contours').classList.toggle('active', showContours);
+  rebuildMesh();
+};
+
+window.cycleRelief = function() {
+  reliefIdx = (reliefIdx + 1) % reliefLevels.length;
+  reliefFactor = reliefLevels[reliefIdx];
+  document.getElementById('btn-relief').textContent = 'Depth ' + reliefFactor.toFixed(1) + '×';
+  rebuildMesh();
+};
+
 function updateButtonStates(view) {
   document.getElementById('btn-iso').classList.toggle('active', view === 'iso');
   document.getElementById('btn-top').classList.toggle('active', view === 'top');
@@ -479,7 +571,7 @@ function updateButtonStates(view) {
 
 window.snapView = function(view) {
   if (view === 'top') {
-    camera.position.set(0.01, 6.5, 0.01);
+    camera.position.set(0.001, 7.2, 0.001);
   } else if (view === 'side') {
     camera.position.set(0, 0.1, 6.5);
   } else {
