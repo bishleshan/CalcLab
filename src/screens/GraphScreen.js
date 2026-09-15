@@ -170,7 +170,7 @@ function hapticSelect() {
   Haptics.selectionAsync().catch(() => {});
 }
 
-// ─── 3D Surface Template with Topographic Contours & Grazing Hillshading ───
+// ─── 3D Surface Template with Topographic Contours, Elevation Legend & Z-Ruler ───
 function build3dHtml(expr, colorScheme = 'cyan') {
   const safeExpr = toSafe3dExpression(expr);
   const label = JSON.stringify(`z = ${normalizeExpression(expr || 'sin(sqrt(x^2 + y^2))')}`.slice(0, 72));
@@ -185,8 +185,8 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   canvas { display:block; width:100vw; height:100vh; }
   
   #hud-top {
-    position:absolute; top:74px; left:14px; right:14px; display:flex; justify-content:space-between; align-items:center;
-    pointer-events:none;
+    position:absolute; top:124px; left:14px; right:14px; display:flex; justify-content:space-between; align-items:center;
+    pointer-events:none; z-index:10;
   }
   .hud-badge {
     background:rgba(8,16,36,0.92); border:1px solid rgba(125,211,252,0.3); border-radius:8px;
@@ -202,9 +202,24 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   .dot-x { width:9px; height:9px; border-radius:4.5px; background:#00f5ff; box-shadow:0 0 6px #00f5ff; }
   .dot-y { width:9px; height:9px; border-radius:4.5px; background:#ff2d78; box-shadow:0 0 6px #ff2d78; }
   .dot-z { width:9px; height:9px; border-radius:4.5px; background:#a855f7; box-shadow:0 0 6px #a855f7; }
+
+  /* Floating Elevation Scale Bar on the side */
+  #elevation-bar {
+    position:absolute; top:175px; right:14px; background:rgba(8,16,36,0.92);
+    border:1px solid rgba(125,211,252,0.28); border-radius:10px; padding:8px 7px;
+    display:flex; flex-direction:column; align-items:center; backdrop-filter:blur(14px);
+    box-shadow:0 4px 18px rgba(0,0,0,0.6); pointer-events:auto; user-select:none; z-index:10;
+  }
+  .elev-title { font-size:8px; font-weight:800; letter-spacing:1px; color:#c084fc; margin-bottom:4px; }
+  .elev-val { font-size:9px; font-weight:700; color:rgba(255,255,255,0.9); font-family:monospace; }
+  .elev-gradient-wrap {
+    position:relative; width:12px; height:85px; margin:4px 0; border-radius:4px; overflow:hidden;
+    border:1px solid rgba(255,255,255,0.25); box-shadow:inset 0 0 4px rgba(0,0,0,0.5);
+  }
+  .elev-bar { width:100%; height:100%; }
   
   #controls-overlay {
-    position:absolute; bottom:82px; right:14px; display:flex; flex-direction:column; gap:8px; pointer-events:auto;
+    position:absolute; bottom:82px; right:14px; display:flex; flex-direction:column; gap:8px; pointer-events:auto; z-index:10;
   }
   .ctrl-btn {
     width:38px; height:38px; border-radius:10px; background:rgba(8,18,40,0.94);
@@ -215,7 +230,7 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   .ctrl-btn:active { background:rgba(56,189,248,0.35); transform:scale(0.94); }
   
   #view-snap-row {
-    position:absolute; bottom:82px; left:14px; display:flex; gap:6px; flex-wrap:wrap; max-width:calc(100vw - 80px); pointer-events:auto;
+    position:absolute; bottom:82px; left:14px; display:flex; gap:6px; flex-wrap:wrap; max-width:calc(100vw - 80px); pointer-events:auto; z-index:10;
   }
   .snap-btn {
     background:rgba(8,18,40,0.92); border:1px solid rgba(255,255,255,0.18);
@@ -230,7 +245,7 @@ function build3dHtml(expr, colorScheme = 'cyan') {
 </head>
 <body>
 <div id="hud-top">
-  <div class="hud-badge" id="angle-hud">3D Solid View</div>
+  <div class="hud-badge" id="angle-hud">3D Iso · 45°</div>
   <div class="axis-legend">
     <div class="axis-tag"><span class="dot-x"></span>X</div>
     <div class="axis-tag"><span class="dot-y"></span>Y</div>
@@ -238,10 +253,21 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   </div>
 </div>
 
+<div id="elevation-bar">
+  <div class="elev-title">Z SCALE</div>
+  <div class="elev-val" id="elev-max">+1.0</div>
+  <div class="elev-gradient-wrap">
+    <div class="elev-bar" id="elev-grad"></div>
+  </div>
+  <div class="elev-val" id="elev-mid">0.0</div>
+  <div class="elev-val" id="elev-min">-1.0</div>
+</div>
+
 <div id="view-snap-row">
   <button class="snap-btn active" id="btn-iso" onclick="snapView('iso')">3D Iso</button>
   <button class="snap-btn" id="btn-top" onclick="snapView('top')">Top (X-Y)</button>
-  <button class="snap-btn" id="btn-side" onclick="snapView('side')">Side (X-Z)</button>
+  <button class="snap-btn" id="btn-front" onclick="snapView('front')">Front (X-Z)</button>
+  <button class="snap-btn" id="btn-side" onclick="snapView('side')">Side (Y-Z)</button>
   <button class="snap-btn active" id="btn-contours" onclick="toggleContours()">Contours ◉</button>
   <button class="snap-btn" id="btn-relief" onclick="cycleRelief()">Depth 1.4×</button>
   <button class="snap-btn active" id="btn-spin" onclick="toggleSpin()">Auto ↻</button>
@@ -270,18 +296,18 @@ function fExpr(x, y) {
 
 const activeScheme = ${JSON.stringify(colorScheme)};
 
-// ─── Initialize Three.js matching Graph3D.js with Grazing Hillshading ───
+// ─── Initialize Three.js matching Graph3D.js ───────────────────
 const scene = new THREE.Scene();
 const W = window.innerWidth, H = window.innerHeight;
 const camera = new THREE.PerspectiveCamera(48, W / H, 0.1, 100);
-camera.position.set(3.8, 2.8, 3.8);
+camera.position.set(4.0, 3.2, 4.0);
 camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setSize(W, H);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.3;
+renderer.toneMappingExposure = 1.05;
 renderer.setClearColor(0x020617, 1);
 document.body.appendChild(renderer.domElement);
 
@@ -290,69 +316,92 @@ const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
-// ─── High-Relief Grazing Directional & Multi-Point Lighting System ───
-// Ambient light: Soft dark fill so depth shadows on slopes are deep and visible from top
-scene.add(new THREE.AmbientLight(0x0a1628, 0.75));
+// ─── Balanced Multi-Directional Grazing Lighting System ────────
+scene.add(new THREE.AmbientLight(0x0a1628, 0.5));
 
-// Primary Grazing Directional Sun Light (Strikes surface at ~25 deg elevation)
-// Creates natural hillshading relief: windward ripple slopes glow, leeward slopes shade
-const sunLight = new THREE.DirectionalLight(0xffffff, 2.8);
-sunLight.position.set(7, 3.6, 6);
+// Primary Grazing Directional Light (Hits ripples from ~25 deg side elevation)
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
+sunLight.position.set(6, 4.0, 5);
 scene.add(sunLight);
 
-// Secondary Grazing Rim Light on opposite flank
-const rimDirLight = new THREE.DirectionalLight(0x00f5ff, 1.8);
-rimDirLight.position.set(-7, 2.5, -5);
+// Opposing Colored Rim Light
+const rimDirLight = new THREE.DirectionalLight(0x00f5ff, 0.85);
+rimDirLight.position.set(-6, 3.0, -4);
 scene.add(rimDirLight);
 
-// Warm Fill Light for underlighting valleys
-const warmLight = new THREE.DirectionalLight(0xff2d78, 1.4);
+// Valley Warm Fill Light
+const warmLight = new THREE.DirectionalLight(0xff2d78, 0.65);
 warmLight.position.set(4, 2.0, -5);
 scene.add(warmLight);
 
-// Orbiting Cyan Key PointLight from Graph3D.js
-const pl1 = new THREE.PointLight(0x00f5ff, 3.2, 22);
-pl1.position.set(4, 5, 4);
+// Orbiting Cyan Key PointLight
+const pl1 = new THREE.PointLight(0x00f5ff, 1.2, 18);
+pl1.position.set(4, 4.5, 4);
 scene.add(pl1);
 
-const pl2 = new THREE.PointLight(0xff2d78, 2.2, 20);
+const pl2 = new THREE.PointLight(0xff2d78, 0.8, 16);
 pl2.position.set(-4, -3, 3);
 scene.add(pl2);
 
 // GridHelper
 const grid = new THREE.GridHelper(8, 28, 0x002838, 0x001420);
 grid.material.transparent = true;
-grid.material.opacity = 0.55;
+grid.material.opacity = 0.5;
 grid.position.y = -2.2;
 scene.add(grid);
 
-// 3D Sprite Axis Labels
-function makeLabel(text, pos, color) {
+// 3D Sprite Label Generator
+function makeLabel(text, pos, color, parent = scene, scaleW = 0.65, scaleH = 0.32) {
   const c = document.createElement('canvas');
-  c.width = 64; c.height = 32;
+  c.width = 96; c.height = 40;
   const ctx = c.getContext('2d');
   ctx.fillStyle = color;
   ctx.font = 'bold 22px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(text, 32, 22);
+  ctx.fillText(text, 48, 26);
   const tex = new THREE.CanvasTexture(c);
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.85 });
   const sprite = new THREE.Sprite(mat);
   sprite.position.set(...pos);
-  sprite.scale.set(0.65, 0.32, 1);
-  scene.add(sprite);
+  sprite.scale.set(scaleW, scaleH, 1);
+  parent.add(sprite);
+  return sprite;
 }
-makeLabel('X', [4.5, 0, 0], '#00f5ff');
-makeLabel('Y', [0, 0, 4.5], '#ff2d78');
-makeLabel('Z', [0, 3.4, 0], '#a855f7');
+
+const lblX = makeLabel('X', [4.5, 0, 0], '#00f5ff');
+const lblY = makeLabel('Y', [0, 0, 4.5], '#ff2d78');
+// Position Z label at corner pillar rather than blocking center
+const lblZ = makeLabel('Z (Height)', [0, 3.4, 0], '#a855f7');
 
 // Solid 3D Coordinate Axis Lines
 const axGeoX = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-4,0,0), new THREE.Vector3(4,0,0)]);
 const axGeoY = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-4), new THREE.Vector3(0,0,4)]);
 const axGeoZ = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-2.2,0), new THREE.Vector3(0,3.2,0)]);
-scene.add(new THREE.Line(axGeoX, new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.6, transparent: true })));
-scene.add(new THREE.Line(axGeoY, new THREE.LineBasicMaterial({ color: 0xff2d78, opacity: 0.6, transparent: true })));
-scene.add(new THREE.Line(axGeoZ, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.6, transparent: true })));
+const axLineX = new THREE.Line(axGeoX, new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.6, transparent: true }));
+const axLineY = new THREE.Line(axGeoY, new THREE.LineBasicMaterial({ color: 0xff2d78, opacity: 0.6, transparent: true }));
+const axLineZ = new THREE.Line(axGeoZ, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.6, transparent: true }));
+scene.add(axLineX);
+scene.add(axLineY);
+scene.add(axLineZ);
+
+// ─── 3D Graduated Vertical Height Ruler (Corner Pillar) ────────
+const cornerPillar = new THREE.Group();
+scene.add(cornerPillar);
+
+const pillarGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-3.4, -2.2, -3.4),
+  new THREE.Vector3(-3.4, 2.6, -3.4)
+]);
+cornerPillar.add(new THREE.Line(pillarGeo, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.8, transparent: true })));
+
+[-2, -1, 0, 1, 2].forEach(zv => {
+  const tickGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-3.4, zv, -3.4),
+    new THREE.Vector3(-3.1, zv, -3.4)
+  ]);
+  cornerPillar.add(new THREE.Line(tickGeo, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.6, transparent: true })));
+  makeLabel((zv > 0 ? '+' : '') + zv, [-2.6, zv, -3.4], '#c084fc', cornerPillar, 0.45, 0.22);
+});
 
 // 250 Glowing Space Particles
 const pGeo = new THREE.BufferGeometry();
@@ -367,7 +416,7 @@ pGeo.setAttribute('color', new THREE.Float32BufferAttribute(pCol, 3));
 const pMat = new THREE.PointsMaterial({ size: 0.045, vertexColors: true, transparent: true, opacity: 0.55 });
 scene.add(new THREE.Points(pGeo, pMat));
 
-// ─── 5-Stop Scientific & Cosmic Colormaps ─────────────────────
+// ─── 5-Stop Saturated Scientific & Cosmic Colormaps ───────────
 function lerp(a, b, u) { return a + (b - a) * u; }
 function lerp3(c1, c2, u) {
   return [lerp(c1[0], c2[0], u), lerp(c1[1], c2[1], u), lerp(c1[2], c2[2], u)];
@@ -385,36 +434,36 @@ function sampleStops(stops, u) {
 function getBaseColor(scheme, u) {
   if (scheme === 'sunset') {
     return sampleStops([
-      { t: 0.00, c: [0.08, 0.02, 0.18] }, // deep midnight plum
-      { t: 0.25, c: [0.65, 0.08, 0.60] }, // intense magenta
-      { t: 0.50, c: [0.95, 0.18, 0.30] }, // fiery coral
-      { t: 0.75, c: [1.00, 0.65, 0.10] }, // bright neon amber
-      { t: 1.00, c: [1.00, 0.98, 0.65] }, // sunburst golden white
+      { t: 0.00, c: [0.12, 0.02, 0.16] }, // deep midnight plum
+      { t: 0.25, c: [0.70, 0.08, 0.65] }, // electric magenta
+      { t: 0.50, c: [0.96, 0.22, 0.32] }, // vivid coral
+      { t: 0.75, c: [1.00, 0.62, 0.12] }, // neon amber gold
+      { t: 1.00, c: [1.00, 0.96, 0.65] }, // glowing sunburst crest
     ], u);
   } else if (scheme === 'emerald') {
     return sampleStops([
-      { t: 0.00, c: [0.01, 0.10, 0.16] }, // deep abyssal teal
-      { t: 0.25, c: [0.03, 0.38, 0.35] }, // dark seafoam
-      { t: 0.50, c: [0.06, 0.85, 0.45] }, // vivid emerald
-      { t: 0.75, c: [0.65, 0.98, 0.22] }, // radiant lime
-      { t: 1.00, c: [0.92, 1.00, 0.88] }, // glowing mint white
+      { t: 0.00, c: [0.01, 0.12, 0.16] }, // deep abyss teal
+      { t: 0.25, c: [0.03, 0.42, 0.36] }, // seafoam
+      { t: 0.50, c: [0.06, 0.85, 0.45] }, // vibrant emerald
+      { t: 0.75, c: [0.65, 0.98, 0.22] }, // radioactive lime
+      { t: 1.00, c: [0.90, 1.00, 0.85] }, // luminous mint white
     ], u);
   } else if (scheme === 'ceramic') {
     return sampleStops([
-      { t: 0.00, c: [0.08, 0.11, 0.18] }, // obsidian slate
-      { t: 0.25, c: [0.25, 0.32, 0.42] }, // graphite steel
+      { t: 0.00, c: [0.08, 0.10, 0.16] }, // dark obsidian
+      { t: 0.25, c: [0.26, 0.32, 0.42] }, // graphite steel
       { t: 0.50, c: [0.55, 0.62, 0.72] }, // satin chrome
-      { t: 0.75, c: [0.82, 0.86, 0.92] }, // polished platinum
-      { t: 1.00, c: [1.00, 1.00, 1.00] }, // pure specular white
+      { t: 0.75, c: [0.82, 0.86, 0.92] }, // platinum
+      { t: 1.00, c: [1.00, 1.00, 1.00] }, // pure white
     ], u);
   } else {
-    // Electric Cyan & Ocean Wave Depths
+    // Electric Cyan & Ocean Wave Depths (Balanced Saturated)
     return sampleStops([
-      { t: 0.00, c: [0.01, 0.05, 0.22] }, // deep abyss midnight blue
+      { t: 0.00, c: [0.02, 0.06, 0.24] }, // deep midnight abyss
       { t: 0.25, c: [0.06, 0.28, 0.82] }, // royal sapphire
-      { t: 0.50, c: [0.00, 0.88, 1.00] }, // electric cyan
-      { t: 0.75, c: [0.25, 0.96, 0.85] }, // aquamarine
-      { t: 1.00, c: [0.95, 1.00, 1.00] }, // radiant glowing white
+      { t: 0.50, c: [0.00, 0.82, 0.98] }, // electric cyan
+      { t: 0.75, c: [0.22, 0.95, 0.82] }, // aquamarine
+      { t: 1.00, c: [0.88, 0.98, 1.00] }, // glowing crest
     ], u);
   }
 }
@@ -457,11 +506,11 @@ surfGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 surfGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 surfGeo.setIndex(idx);
 
-// SOLID MESH PHONG MATERIAL (100% Opaque Solid with Specular Sheen)
+// SOLID MESH PHONG MATERIAL (Semi-matte satiny sheen, no white blowout)
 const surfMat = new THREE.MeshPhongMaterial({
   vertexColors: true,
   side: THREE.DoubleSide,
-  shininess: 90,
+  shininess: 32,
   opacity: 1.0,
 });
 
@@ -470,11 +519,25 @@ const wireMat = new THREE.MeshBasicMaterial({
   color: activeScheme === 'sunset' ? 0xff2d78 : activeScheme === 'emerald' ? 0x34d399 : 0x00f5ff,
   wireframe: true,
   transparent: true,
-  opacity: 0.18,
+  opacity: 0.16,
 });
 
 surfGrp.add(new THREE.Mesh(surfGeo, surfMat));
 surfGrp.add(new THREE.Mesh(surfGeo, wireMat));
+
+// Update Elevation Gradient Bar in HTML
+const elevGrad = document.getElementById('elev-grad');
+if (elevGrad) {
+  if (activeScheme === 'sunset') {
+    elevGrad.style.background = 'linear-gradient(to bottom, #fef08a, #fb923c, #f43f5e, #c026d3, #1e0524)';
+  } else if (activeScheme === 'emerald') {
+    elevGrad.style.background = 'linear-gradient(to bottom, #a7f3d0, #34d399, #10b981, #047857, #022c22)';
+  } else if (activeScheme === 'ceramic') {
+    elevGrad.style.background = 'linear-gradient(to bottom, #ffffff, #cbd5e1, #94a3b8, #475569, #0f172a)';
+  } else {
+    elevGrad.style.background = 'linear-gradient(to bottom, #e0faff, #00d4ff, #0077ff, #1040c0, #030a24)';
+  }
+}
 
 function rebuildMesh() {
   let v = 0;
@@ -491,17 +554,15 @@ function rebuildMesh() {
       const baseCol = getBaseColor(activeScheme, t);
 
       if (showContours) {
-        // Topographic Iso-Elevation Contour Bands (16 distinct levels)
-        // Delineates circular ripple wavefronts so they POP from directly above!
-        const isoFreq = 16.0;
-        const ringPhase = t * isoFreq;
-        const frac = ringPhase - Math.floor(ringPhase);
-        const groove = Math.pow(Math.sin(frac * Math.PI), 0.32);
-        const ridge = Math.exp(-Math.pow((frac - 0.5) / 0.11, 2));
+        // Multiplicative Topographic Iso-Contour Rings (14 levels)
+        // Modulates the base color hue without blowing out to chalky white
+        const isoFreq = 14.0;
+        const ringVal = Math.sin(t * Math.PI * 2 * isoFreq);
+        const contourFactor = 0.85 + 0.18 * ringVal;
 
-        colors[v]     = Math.min(1, baseCol[0] * (0.65 + 0.35 * groove) + 0.32 * ridge);
-        colors[v + 1] = Math.min(1, baseCol[1] * (0.65 + 0.35 * groove) + 0.32 * ridge);
-        colors[v + 2] = Math.min(1, baseCol[2] * (0.65 + 0.35 * groove) + 0.32 * ridge);
+        colors[v]     = Math.min(1.0, baseCol[0] * contourFactor);
+        colors[v + 1] = Math.min(1.0, baseCol[1] * contourFactor);
+        colors[v + 2] = Math.min(1.0, baseCol[2] * contourFactor);
       } else {
         colors[v]     = baseCol[0];
         colors[v + 1] = baseCol[1];
@@ -515,6 +576,14 @@ function rebuildMesh() {
   surfGeo.attributes.position.needsUpdate = true;
   surfGeo.attributes.color.needsUpdate = true;
   surfGeo.computeVertexNormals();
+
+  // Update Elevation Scale readout
+  const elevMax = document.getElementById('elev-max');
+  const elevMid = document.getElementById('elev-mid');
+  const elevMin = document.getElementById('elev-min');
+  if (elevMax) elevMax.textContent = (zMax >= 0 ? '+' : '') + zMax.toFixed(1);
+  if (elevMid) elevMid.textContent = ((zMax + zMin) / 2).toFixed(1);
+  if (elevMin) elevMin.textContent = (zMin >= 0 ? '+' : '') + zMin.toFixed(1);
 }
 
 rebuildMesh();
@@ -524,8 +593,8 @@ function updateAngleHud() {
   const theta = Math.round(((controls.getAzimuthalAngle() * 180 / Math.PI) + 360) % 360);
   const phi = Math.round((controls.getPolarAngle() * 180 / Math.PI));
   let viewName = '3D Angle';
-  if (phi < 18) viewName = 'Top View (X-Y) · Hillshaded';
-  else if (Math.abs(phi - 90) < 12) viewName = 'Side Profile';
+  if (phi < 18) viewName = 'Top View (X-Y) · Topographic';
+  else if (Math.abs(phi - 90) < 12) viewName = 'Elevation Profile (Side)';
   else viewName = '3D Iso';
   angleHud.textContent = viewName + ' · ' + theta + '°';
 }
@@ -537,12 +606,7 @@ window.adjustZoom = function(factor) {
 };
 
 window.resetAll = function() {
-  camera.position.set(3.8, 2.8, 3.8);
-  camera.lookAt(0, 0, 0);
-  controls.target.set(0, 0, 0);
-  controls.update();
-  updateButtonStates('iso');
-  updateAngleHud();
+  snapView('iso');
 };
 
 window.toggleSpin = function() {
@@ -566,16 +630,31 @@ window.cycleRelief = function() {
 function updateButtonStates(view) {
   document.getElementById('btn-iso').classList.toggle('active', view === 'iso');
   document.getElementById('btn-top').classList.toggle('active', view === 'top');
+  document.getElementById('btn-front').classList.toggle('active', view === 'front');
   document.getElementById('btn-side').classList.toggle('active', view === 'side');
 }
 
 window.snapView = function(view) {
   if (view === 'top') {
-    camera.position.set(0.001, 7.2, 0.001);
+    camera.position.set(0.001, 7.5, 0.001);
+    lblZ.visible = false;
+    axLineZ.visible = false;
+    cornerPillar.visible = false;
+  } else if (view === 'front') {
+    camera.position.set(0, 1.8, 6.8);
+    lblZ.visible = true;
+    axLineZ.visible = true;
+    cornerPillar.visible = true;
   } else if (view === 'side') {
-    camera.position.set(0, 0.1, 6.5);
+    camera.position.set(6.8, 1.8, 0);
+    lblZ.visible = true;
+    axLineZ.visible = true;
+    cornerPillar.visible = true;
   } else {
-    camera.position.set(3.8, 2.8, 3.8);
+    camera.position.set(4.0, 3.2, 4.0);
+    lblZ.visible = true;
+    axLineZ.visible = true;
+    cornerPillar.visible = true;
   }
   camera.lookAt(0, 0, 0);
   controls.target.set(0, 0, 0);
