@@ -40,3 +40,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local demo scripts and notes
+DEMO_SCRIPT.txt
