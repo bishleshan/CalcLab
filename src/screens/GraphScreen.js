@@ -170,7 +170,7 @@ function hapticSelect() {
   Haptics.selectionAsync().catch(() => {});
 }
 
-// ─── 3D High-End Solid Surface with Specular Lighting & Floor Pedestal ───
+// ─── 3D Surface Template Matching Web App Graph3D.js Exactly ───
 function build3dHtml(expr, colorScheme = 'cyan') {
   const safeExpr = toSafe3dExpression(expr);
   const label = JSON.stringify(`z = ${normalizeExpression(expr || 'sin(sqrt(x^2 + y^2))')}`.slice(0, 72));
@@ -199,9 +199,9 @@ function build3dHtml(expr, colorScheme = 'cyan') {
     font-size:10px; color:#fff; pointer-events:auto; box-shadow:0 4px 14px rgba(0,0,0,0.5);
   }
   .axis-tag { display:flex; align-items:center; gap:4px; font-weight:800; }
-  .dot-x { width:9px; height:9px; border-radius:4.5px; background:#f43f5e; box-shadow:0 0 6px #f43f5e; }
-  .dot-y { width:9px; height:9px; border-radius:4.5px; background:#38bdf8; box-shadow:0 0 6px #38bdf8; }
-  .dot-z { width:9px; height:9px; border-radius:4.5px; background:#34d399; box-shadow:0 0 6px #34d399; }
+  .dot-x { width:9px; height:9px; border-radius:4.5px; background:#00f5ff; box-shadow:0 0 6px #00f5ff; }
+  .dot-y { width:9px; height:9px; border-radius:4.5px; background:#ff2d78; box-shadow:0 0 6px #ff2d78; }
+  .dot-z { width:9px; height:9px; border-radius:4.5px; background:#a855f7; box-shadow:0 0 6px #a855f7; }
   
   #controls-overlay {
     position:absolute; bottom:82px; right:14px; display:flex; flex-direction:column; gap:8px; pointer-events:auto;
@@ -225,10 +225,10 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   .snap-btn:active { background:rgba(56,189,248,0.3); color:#7dd3fc; }
   .snap-btn.active { border-color:#38bdf8; color:#38bdf8; background:rgba(56,189,248,0.15); }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
-<canvas id="surface"></canvas>
-
 <div id="hud-top">
   <div class="hud-badge" id="angle-hud">3D Solid View</div>
   <div class="axis-legend">
@@ -242,439 +242,228 @@ function build3dHtml(expr, colorScheme = 'cyan') {
   <button class="snap-btn active" id="btn-iso" onclick="snapView('iso')">3D Iso</button>
   <button class="snap-btn" id="btn-top" onclick="snapView('top')">Top (X-Y)</button>
   <button class="snap-btn" id="btn-side" onclick="snapView('side')">Side (X-Z)</button>
-  <button class="snap-btn" id="btn-spin" onclick="toggleSpin()">Auto ↻</button>
+  <button class="snap-btn active" id="btn-spin" onclick="toggleSpin()">Auto ↻</button>
 </div>
 
 <div id="controls-overlay">
-  <button class="ctrl-btn" onclick="adjustZoom(-1.6)" title="Zoom In">+</button>
-  <button class="ctrl-btn" onclick="adjustZoom(1.6)" title="Zoom Out">−</button>
+  <button class="ctrl-btn" onclick="adjustZoom(0.82)" title="Zoom In">+</button>
+  <button class="ctrl-btn" onclick="adjustZoom(1.22)" title="Zoom Out">−</button>
   <button class="ctrl-btn" onclick="resetAll()" title="Reset View">⟲</button>
 </div>
 
 <script>
-const canvas = document.getElementById('surface');
 const angleHud = document.getElementById('angle-hud');
-const gl = canvas.getContext('webgl', { antialias: true, alpha: false, depth: true });
-if (!gl) {
-  document.body.innerHTML = '<div style="color:#fff;padding:40px;text-align:center;">WebGL unavailable.</div>';
-  throw new Error('WebGL unavailable');
-}
-
-// ─── Shaders with Blinn-Phong Specular & Underside Dual Shading ───
-const vs =
-  'attribute vec3 aPos;' +
-  'attribute vec3 aNormal;' +
-  'attribute vec3 aColor;' +
-  'uniform mat4 uMatrix;' +
-  'uniform mat3 uNormalMat;' +
-  'varying vec3 vNormal;' +
-  'varying vec3 vColor;' +
-  'varying vec3 vWorldPos;' +
-  'void main(){' +
-  '  gl_Position = uMatrix * vec4(aPos, 1.0);' +
-  '  vNormal = normalize(uNormalMat * aNormal);' +
-  '  vColor = aColor;' +
-  '  vWorldPos = aPos;' +
-  '}';
-
-const fs =
-  'precision mediump float;' +
-  'varying vec3 vNormal;' +
-  'varying vec3 vColor;' +
-  'varying vec3 vWorldPos;' +
-  'uniform vec3 uLightDir;' +
-  'uniform float uRenderMode;' + // 0: unlit lines, 1: solid surface, 2: floor grid
-  'void main(){' +
-  '  if (uRenderMode < 0.5) {' +
-  '    gl_FragColor = vec4(vColor, 0.95);' +
-  '  } else if (uRenderMode > 1.5) {' +
-  '    gl_FragColor = vec4(vColor, 0.35);' +
-  '  } else {' +
-  '    vec3 n = normalize(vNormal);' +
-  '    vec3 l = normalize(uLightDir);' +
-  '    vec3 v = vec3(0.0, 0.0, 1.0);' +
-  '    float nDotL = dot(n, l);' +
-  '    vec3 baseColor = vColor;' +
-  // Double-sided lighting: if looking at underside, use rich warm dark slate
-  '    if (nDotL < 0.0) {' +
-  '      n = -n;' +
-  '      nDotL = dot(n, l);' +
-  '      baseColor = mix(vColor, vec3(0.12, 0.16, 0.3), 0.55);' +
-  '    }' +
-  '    float diff = max(nDotL, 0.0);' +
-  '    vec3 h = normalize(l + v);' +
-  '    float spec = pow(max(dot(n, h), 0.0), 32.0) * 0.38;' +
-  '    float amb = 0.42;' +
-  '    vec3 lit = baseColor * (amb + diff * 0.68) + vec3(spec);' +
-  '    gl_FragColor = vec4(lit, 1.0);' +
-  '  }' +
-  '}';
-
-function createShader(type, src) {
-  const s = gl.createShader(type);
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  return s;
-}
-
-const prog = gl.createProgram();
-gl.attachShader(prog, createShader(gl.VERTEX_SHADER, vs));
-gl.attachShader(prog, createShader(gl.FRAGMENT_SHADER, fs));
-gl.linkProgram(prog);
-
-const locPos = gl.getAttribLocation(prog, 'aPos');
-const locNormal = gl.getAttribLocation(prog, 'aNormal');
-const locColor = gl.getAttribLocation(prog, 'aColor');
-const locMatrix = gl.getUniformLocation(prog, 'uMatrix');
-const locNormalMat = gl.getUniformLocation(prog, 'uNormalMat');
-const locLightDir = gl.getUniformLocation(prog, 'uLightDir');
-const locRenderMode = gl.getUniformLocation(prog, 'uRenderMode');
+let autoRotate = true;
 
 function fExpr(x, y) {
   try {
     const v = Number(${safeExpr});
-    return Number.isFinite(v) ? Math.max(-4.5, Math.min(4.5, v)) : 0;
+    return Number.isFinite(v) ? Math.max(-3.5, Math.min(3.5, v)) : 0;
   } catch(e) { return 0; }
 }
 
-// ─── Build Solid Surface Geometry ────────────────────────────
+const activeScheme = ${JSON.stringify(colorScheme)};
+
+// ─── Initialize Three.js matching Graph3D.js from Web App ───────
+const scene = new THREE.Scene();
+const W = window.innerWidth, H = window.innerHeight;
+const camera = new THREE.PerspectiveCamera(48, W / H, 0.1, 100);
+camera.position.set(3.8, 2.8, 3.8);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.25;
+renderer.setClearColor(0x020617, 1);
+document.body.appendChild(renderer.domElement);
+
+// OrbitControls with Damping
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+
+// Dynamic Multi-Point Lighting System matching Graph3D.js
+scene.add(new THREE.AmbientLight(0x1a3344, 1.6));
+const pl1 = new THREE.PointLight(0x00f5ff, 3.8, 22); // Orbiting Cyan Key Light
+pl1.position.set(4, 5, 4);
+scene.add(pl1);
+
+const pl2 = new THREE.PointLight(0xff2d78, 2.8, 20); // Pink Fill Light
+pl2.position.set(-4, -3, 3);
+scene.add(pl2);
+
+const pl3 = new THREE.PointLight(0xa855f7, 1.8, 16); // Purple Rim Light
+pl3.position.set(0, 6, -5);
+scene.add(pl3);
+
+// GridHelper matching Graph3D.js
+const grid = new THREE.GridHelper(8, 28, 0x002838, 0x001420);
+grid.material.transparent = true;
+grid.material.opacity = 0.55;
+grid.position.y = -2.2;
+scene.add(grid);
+
+// 3D Sprite Axis Labels matching Graph3D.js
+function makeLabel(text, pos, color) {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 32;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.font = 'bold 22px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, 32, 22);
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.85 });
+  const sprite = new THREE.Sprite(mat);
+  sprite.position.set(...pos);
+  sprite.scale.set(0.65, 0.32, 1);
+  scene.add(sprite);
+}
+makeLabel('X', [4.5, 0, 0], '#00f5ff');
+makeLabel('Y', [0, 0, 4.5], '#ff2d78');
+makeLabel('Z', [0, 3.4, 0], '#a855f7');
+
+// Solid 3D Coordinate Axis Lines
+const axGeoX = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-4,0,0), new THREE.Vector3(4,0,0)]);
+const axGeoY = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-4), new THREE.Vector3(0,0,4)]);
+const axGeoZ = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-2.2,0), new THREE.Vector3(0,3.2,0)]);
+scene.add(new THREE.Line(axGeoX, new THREE.LineBasicMaterial({ color: 0x00f5ff, opacity: 0.6, transparent: true })));
+scene.add(new THREE.Line(axGeoY, new THREE.LineBasicMaterial({ color: 0xff2d78, opacity: 0.6, transparent: true })));
+scene.add(new THREE.Line(axGeoZ, new THREE.LineBasicMaterial({ color: 0xa855f7, opacity: 0.6, transparent: true })));
+
+// 250 Glowing Space Particles matching Graph3D.js
+const pGeo = new THREE.BufferGeometry();
+const pPos = [], pCol = [];
+for (let i = 0; i < 250; i++) {
+  pPos.push((Math.random() - 0.5) * 11, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 11);
+  const c = Math.random() > 0.5 ? [0, 0.96, 1] : Math.random() > 0.5 ? [1, 0.18, 0.47] : [0.66, 0.33, 0.97];
+  pCol.push(...c);
+}
+pGeo.setAttribute('position', new THREE.Float32BufferAttribute(pPos, 3));
+pGeo.setAttribute('color', new THREE.Float32BufferAttribute(pCol, 3));
+const pMat = new THREE.PointsMaterial({ size: 0.045, vertexColors: true, transparent: true, opacity: 0.55 });
+scene.add(new THREE.Points(pGeo, pMat));
+
+// Solid Dual-Mesh Mathematical Surface Group
+const surfGrp = new THREE.Group();
+scene.add(surfGrp);
+
 const NS = 48;
 const RANGE = 3.2;
-const grid = [];
+const cnt = (NS + 1) * (NS + 1);
+const pos = new Float32Array(cnt * 3);
+const colors = new Float32Array(cnt * 3);
+const idx = [];
+let k = 0, v = 0;
 let zMin = Infinity, zMax = -Infinity;
 
+const heights = [];
 for (let i = 0; i <= NS; i++) {
   const row = [];
   for (let j = 0; j <= NS; j++) {
-    const x = -RANGE + (i / NS) * 2 * RANGE;
-    const y = -RANGE + (j / NS) * 2 * RANGE;
+    const x = (i / NS - 0.5) * 6;
+    const y = (j / NS - 0.5) * 6;
     const z = fExpr(x, y);
     row.push(z);
     zMin = Math.min(zMin, z);
     zMax = Math.max(zMax, z);
   }
-  grid.push(row);
+  heights.push(row);
 }
 const zRange = zMax - zMin || 1;
 
-// Solid Scientific Colormaps (Rich, Opaque, Contrasting)
-function colormap(t, scheme) {
-  t = Math.max(0.0, Math.min(1.0, t));
-  if (scheme === 'sunset') {
-    // Deep Violet -> Rich Magenta -> Vivid Coral -> Golden Amber
-    if (t < 0.33) {
-      const s = t / 0.33;
-      return [0.28 + 0.45 * s, 0.05 + 0.1 * s, 0.42 + 0.4 * s];
-    } else if (t < 0.66) {
-      const s = (t - 0.33) / 0.33;
-      return [0.73 + 0.24 * s, 0.15 + 0.45 * s, 0.82 * (1.0 - s * 0.7)];
-    } else {
-      const s = (t - 0.66) / 0.34;
-      return [0.97 + 0.03 * s, 0.6 + 0.38 * s, 0.25 * (1.0 - s)];
-    }
-  } else if (scheme === 'emerald') {
-    // Deep Pine -> Vivid Jade -> Neon Mint -> Sunlight
-    return [
-      0.08 + 0.85 * Math.pow(t, 2.2),
-      0.35 + 0.65 * Math.pow(t, 0.7),
-      0.65 * (1.0 - t * 0.6)
-    ];
-  } else if (scheme === 'ceramic') {
-    // Sculptural Solid Matte White / Ice with gentle shading
-    const tone = 0.82 + 0.18 * t;
-    return [tone * 0.95, tone * 0.98, tone];
-  } else {
-    // Solid Cyber Cyan: Deep Royal Sapphire -> Vivid Electric Cyan -> Crisp Arctic Ice
-    if (t < 0.5) {
-      const s = t / 0.5;
-      return [0.08 + 0.1 * s, 0.22 + 0.6 * s, 0.65 + 0.35 * s];
-    } else {
-      const s = (t - 0.5) / 0.5;
-      return [0.18 + 0.75 * s, 0.82 + 0.18 * s, 1.0];
-    }
-  }
-}
-
-const activeScheme = ${JSON.stringify(colorScheme)};
-const positions = [];
-const normals = [];
-const colors = [];
-const indices = [];
-const wirePositions = [];
-const wireColors = [];
-
 for (let i = 0; i <= NS; i++) {
   for (let j = 0; j <= NS; j++) {
-    const x = -RANGE + (i / NS) * 2 * RANGE;
-    const y = -RANGE + (j / NS) * 2 * RANGE;
-    const z = grid[i][j];
-    positions.push(x, z * 0.65, y);
+    const x = (i / NS - 0.5) * 6;
+    const zVal = heights[i][j];
+    const y = (j / NS - 0.5) * 6;
+    pos[v] = x;
+    pos[v + 1] = zVal * 0.62;
+    pos[v + 2] = y;
 
-    // Precise Central Difference Normals
-    const dzdx = (i > 0 && i < NS) ? (grid[i+1][j] - grid[i-1][j]) / (2 * (2 * RANGE / NS)) : 0;
-    const dzdy = (j > 0 && j < NS) ? (grid[i][j+1] - grid[i][j-1]) / (2 * (2 * RANGE / NS)) : 0;
-    const len = Math.hypot(-dzdx, 1.0, -dzdy) || 1;
-    normals.push(-dzdx / len, 1.0 / len, -dzdy / len);
-
-    const t = (z - zMin) / zRange;
-    const rgb = colormap(t, activeScheme);
-    colors.push(rgb[0], rgb[1], rgb[2]);
+    const t = Math.max(0, Math.min(1, (zVal - zMin) / zRange));
+    if (activeScheme === 'sunset') {
+      // Solid Sunset / Magma
+      colors[v] = 0.28 + 0.7 * t;
+      colors[v + 1] = 0.05 + 0.65 * t * t;
+      colors[v + 2] = 0.85 * (1.0 - t * 0.7);
+    } else if (activeScheme === 'emerald') {
+      // Solid Cyber Emerald
+      colors[v] = 0.08 + 0.8 * t * t;
+      colors[v + 1] = 0.4 + 0.6 * t;
+      colors[v + 2] = 0.7 * (1.0 - t * 0.7);
+    } else if (activeScheme === 'ceramic') {
+      // Solid Studio White / Porcelain
+      const val = 0.85 + 0.15 * t;
+      colors[v] = val * 0.95; colors[v + 1] = val * 0.98; colors[v + 2] = val;
+    } else {
+      // Solid Electric Blue / Cyber Cyan matching Graph3D.js
+      colors[v] = t * 0.12;
+      colors[v + 1] = 0.38 + t * 0.58;
+      colors[v + 2] = 0.78 + t * 0.22;
+    }
+    v += 3; k++;
   }
 }
 
-// Solid Surface Triangles & Subtle Mesh Wireframe
 for (let i = 0; i < NS; i++) {
   for (let j = 0; j < NS; j++) {
-    const a = i * (NS + 1) + j;
-    const b = a + 1;
-    const c = (i + 1) * (NS + 1) + j;
-    const d = c + 1;
-    indices.push(a, b, d, a, d, c);
-
-    // Quad wireframe border lines (subtle dark contour)
-    if (i % 2 === 0 && j % 2 === 0) {
-      const pA = [positions[a*3], positions[a*3+1], positions[a*3+2]];
-      const pB = [positions[b*3], positions[b*3+1], positions[b*3+2]];
-      const pD = [positions[d*3], positions[d*3+1], positions[d*3+2]];
-      wirePositions.push(...pA, ...pB, ...pB, ...pD);
-      wireColors.push(0.04, 0.08, 0.18, 0.04, 0.08, 0.18, 0.04, 0.08, 0.18, 0.04, 0.08, 0.18);
-    }
+    const a = i * (NS + 1) + j, b = a + 1, c = (i + 1) * (NS + 1) + j, d = c + 1;
+    idx.push(a, b, d, a, d, c);
   }
 }
 
-// ─── Solid High-Contrast 3D Axes (Red X, Cyan Y, Green Z) ───
-const axisPositions = [
-  // X-Axis (-3.8 to +3.8)
-  -3.8, 0, 0,  3.8, 0, 0,
-  // X Arrowhead
-  3.55, 0.18, 0,  3.8, 0, 0,
-  3.55, -0.18, 0, 3.8, 0, 0,
-  
-  // Y-Axis (-3.8 to +3.8)
-  0, 0, -3.8,  0, 0, 3.8,
-  // Y Arrowhead
-  0, 0.18, 3.55,  0, 0, 3.8,
-  0, -0.18, 3.55, 0, 0, 3.8,
-  
-  // Z-Axis (Vertical Height: -2.6 to +3.2)
-  0, -2.6, 0,  0, 3.3, 0,
-  // Z Arrowhead
-  0.18, 3.05, 0,  0, 3.3, 0,
-  -0.18, 3.05, 0, 0, 3.3, 0,
-];
+const surfGeo = new THREE.BufferGeometry();
+surfGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+surfGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+surfGeo.setIndex(idx);
+surfGeo.computeVertexNormals();
 
-const axisColors = [
-  // X: Coral Red
-  0.96, 0.25, 0.37,  0.96, 0.25, 0.37,
-  0.96, 0.25, 0.37,  0.96, 0.25, 0.37,
-  0.96, 0.25, 0.37,  0.96, 0.25, 0.37,
-  // Y: Sky Blue
-  0.22, 0.74, 0.97,  0.22, 0.74, 0.97,
-  0.22, 0.74, 0.97,  0.22, 0.74, 0.97,
-  0.22, 0.74, 0.97,  0.22, 0.74, 0.97,
-  // Z: Emerald Green
-  0.2, 0.83, 0.6,   0.2, 0.83, 0.6,
-  0.2, 0.83, 0.6,   0.2, 0.83, 0.6,
-  0.2, 0.83, 0.6,   0.2, 0.83, 0.6,
-];
-const axisNormals = new Array(axisPositions.length).fill(0);
+// SOLID MESH PHONG MATERIAL (100% Opaque Solid with Specular Sheen)
+const surfMat = new THREE.MeshPhongMaterial({
+  vertexColors: true,
+  side: THREE.DoubleSide,
+  shininess: 95,
+  opacity: 1.0,
+});
 
-// Base Floor Studio Pedestal Grid (underneath the 3D surface)
-const floorY = (zMin * 0.65) - 0.25;
-const floorPositions = [];
-const floorColors = [];
-for (let g = -4; g <= 4; g += 0.8) {
-  floorPositions.push(-4, floorY, g,  4, floorY, g);
-  floorPositions.push(g, floorY, -4,  g, floorY, 4);
-  floorColors.push(0.08, 0.16, 0.35, 0.08, 0.16, 0.35);
-  floorColors.push(0.08, 0.16, 0.35, 0.08, 0.16, 0.35);
-}
-const floorNormals = new Array(floorPositions.length).fill(0);
+// GLOWING WIREFRAME OVERLAY matching Graph3D.js
+const wireMat = new THREE.MeshBasicMaterial({
+  color: activeScheme === 'sunset' ? 0xff2d78 : activeScheme === 'emerald' ? 0x34d399 : 0x00f5ff,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.35,
+});
 
-function makeBuffer(data) {
-  const b = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, b);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-  return b;
-}
+surfGrp.add(new THREE.Mesh(surfGeo, surfMat));
+surfGrp.add(new THREE.Mesh(surfGeo, wireMat));
 
-const posBuf = makeBuffer(positions);
-const normBuf = makeBuffer(normals);
-const colBuf = makeBuffer(colors);
-const idxBuf = gl.createBuffer();
-gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
-gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-
-const wirePosBuf = makeBuffer(wirePositions);
-const wireColBuf = makeBuffer(wireColors);
-const wireNormBuf = makeBuffer(new Array(wirePositions.length).fill(0));
-
-const axisPosBuf = makeBuffer(axisPositions);
-const axisColBuf = makeBuffer(axisColors);
-const axisNormBuf = makeBuffer(axisNormals);
-
-const floorPosBuf = makeBuffer(floorPositions);
-const floorColBuf = makeBuffer(floorColors);
-const floorNormBuf = makeBuffer(floorNormals);
-
-// ─── 3D Matrix Transformations ───────────────────────────────
-function multiply(a, b) {
-  const out = new Float32Array(16);
-  for (let r = 0; r < 4; r++) {
-    for (let c = 0; c < 4; c++) {
-      out[c * 4 + r] =
-        a[0 * 4 + r] * b[c * 4 + 0] +
-        a[1 * 4 + r] * b[c * 4 + 1] +
-        a[2 * 4 + r] * b[c * 4 + 2] +
-        a[3 * 4 + r] * b[c * 4 + 3];
-    }
-  }
-  return out;
-}
-
-function perspective(fov, aspect, near, far) {
-  const f = 1 / Math.tan(fov / 2);
-  const nf = 1 / (near - far);
-  return new Float32Array([
-    f / aspect, 0, 0, 0,
-    0, f, 0, 0,
-    0, 0, (far + near) * nf, -1,
-    0, 0, 2 * far * near * nf, 0,
-  ]);
-}
-
-function translation(x, y, z) {
-  return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]);
-}
-function rotX(a) {
-  const c = Math.cos(a), s = Math.sin(a);
-  return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]);
-}
-function rotY(a) {
-  const c = Math.cos(a), s = Math.sin(a);
-  return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);
-}
-
-let width = 1, height = 1, aspect = 1;
-let theta = -0.65;
-let tilt = -0.55;
-let radius = window.innerWidth < 430 ? 10.8 : 9.2;
-let autoRotate = true;
-let dragging = false;
-let prevX = 0, prevY = 0;
-let pinchDist = 0;
-
+// ─── Interaction & Camera Controls ───────────────────────────
 function updateAngleHud() {
-  const degTheta = Math.round(((theta % (Math.PI * 2)) * 180 / Math.PI + 360) % 360);
-  const degTilt = Math.round(tilt * 180 / Math.PI);
-  let viewName = '3D Iso';
-  if (Math.abs(degTilt - (-90)) < 15) viewName = 'Top (X-Y)';
-  else if (Math.abs(degTilt) < 15) viewName = 'Side Profile';
-  angleHud.textContent = viewName + ' · ' + degTheta + '°';
+  const theta = Math.round(((controls.getAzimuthalAngle() * 180 / Math.PI) + 360) % 360);
+  const phi = Math.round((controls.getPolarAngle() * 180 / Math.PI));
+  let viewName = '3D Angle';
+  if (phi < 18) viewName = 'Top (X-Y)';
+  else if (Math.abs(phi - 90) < 12) viewName = 'Side Profile';
+  else viewName = '3D Iso';
+  angleHud.textContent = viewName + ' · ' + theta + '°';
 }
 
-function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = window.innerWidth;
-  height = window.innerHeight;
-  aspect = width / Math.max(1, height);
-  canvas.width = Math.floor(width * dpr);
-  canvas.height = Math.floor(height * dpr);
-  gl.viewport(0, 0, canvas.width, canvas.height);
-}
-
-function render() {
-  requestAnimationFrame(render);
-  if (autoRotate && !dragging) {
-    theta += 0.0024;
-    updateAngleHud();
-  }
-
-  gl.clearColor(0.008, 0.024, 0.07, 1.0);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-
-  const model = multiply(rotY(theta), rotX(tilt));
-  const view = translation(0, 0.1, -radius);
-  const proj = perspective(0.85, aspect, 0.1, 100);
-  const mvp = multiply(proj, multiply(view, model));
-
-  gl.useProgram(prog);
-  gl.uniformMatrix4fv(locMatrix, false, mvp);
-
-  const nm = new Float32Array([
-    model[0], model[1], model[2],
-    model[4], model[5], model[6],
-    model[8], model[9], model[10]
-  ]);
-  gl.uniformMatrix3fv(locNormalMat, false, nm);
-  gl.uniform3f(locLightDir, 0.65, 0.85, 0.55);
-
-  // 1. Draw Floor Pedestal Grid
-  gl.uniform1f(locRenderMode, 2.0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, floorPosBuf);
-  gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(locPos);
-  gl.bindBuffer(gl.ARRAY_BUFFER, floorNormBuf);
-  gl.vertexAttribPointer(locNormal, 3, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(locNormal);
-  gl.bindBuffer(gl.ARRAY_BUFFER, floorColBuf);
-  gl.vertexAttribPointer(locColor, 3, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(locColor);
-  gl.drawArrays(gl.LINES, 0, floorPositions.length / 3);
-
-  // 2. Draw Solid Lit Surface
-  gl.uniform1f(locRenderMode, 1.0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-  gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
-  gl.vertexAttribPointer(locNormal, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
-  gl.vertexAttribPointer(locColor, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
-  gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
-
-  // 3. Draw Quad Wireframe Outlines
-  if (wirePositions.length > 0) {
-    gl.uniform1f(locRenderMode, 0.0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, wirePosBuf);
-    gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, wireNormBuf);
-    gl.vertexAttribPointer(locNormal, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, wireColBuf);
-    gl.vertexAttribPointer(locColor, 3, gl.FLOAT, false, 0, 0);
-    gl.drawArrays(gl.LINES, 0, wirePositions.length / 3);
-  }
-
-  // 4. Draw Solid Colored Coordinate Axes (Red X, Blue Y, Green Z)
-  gl.uniform1f(locRenderMode, 0.0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, axisPosBuf);
-  gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, axisNormBuf);
-  gl.vertexAttribPointer(locNormal, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, axisColBuf);
-  gl.vertexAttribPointer(locColor, 3, gl.FLOAT, false, 0, 0);
-  gl.drawArrays(gl.LINES, 0, axisPositions.length / 3);
-}
-
-// ─── Touch & Controls Helpers ────────────────────────────────
-function pauseAutoRotate() {
-  autoRotate = false;
-  clearTimeout(window.__resumeRotate);
-  window.__resumeRotate = setTimeout(() => { autoRotate = true; }, 7000);
-}
-
-window.adjustZoom = function(delta) {
-  radius = Math.max(3.8, Math.min(18.0, radius + delta));
-  pauseAutoRotate();
+window.adjustZoom = function(factor) {
+  camera.position.multiplyScalar(factor);
+  controls.update();
+  updateAngleHud();
 };
 
 window.resetAll = function() {
-  theta = -0.65;
-  tilt = -0.55;
-  radius = window.innerWidth < 430 ? 10.8 : 9.2;
-  updateAngleHud();
+  camera.position.set(3.8, 2.8, 3.8);
+  camera.lookAt(0, 0, 0);
+  controls.target.set(0, 0, 0);
+  controls.update();
   updateButtonStates('iso');
+  updateAngleHud();
 };
 
 window.toggleSpin = function() {
@@ -689,64 +478,51 @@ function updateButtonStates(view) {
 }
 
 window.snapView = function(view) {
-  pauseAutoRotate();
   if (view === 'top') {
-    tilt = -1.55;
-    theta = 0;
+    camera.position.set(0.01, 6.5, 0.01);
   } else if (view === 'side') {
-    tilt = 0;
-    theta = 0;
+    camera.position.set(0, 0.1, 6.5);
   } else {
-    tilt = -0.55;
-    theta = -0.65;
+    camera.position.set(3.8, 2.8, 3.8);
   }
-  updateAngleHud();
+  camera.lookAt(0, 0, 0);
+  controls.target.set(0, 0, 0);
+  controls.update();
   updateButtonStates(view);
+  updateAngleHud();
 };
 
-canvas.addEventListener('touchstart', (e) => {
-  pauseAutoRotate();
-  if (e.touches.length === 1) {
-    dragging = true;
-    prevX = e.touches[0].clientX;
-    prevY = e.touches[0].clientY;
-  } else if (e.touches.length === 2) {
-    dragging = false;
-    pinchDist = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
-  }
-}, { passive: true });
+controls.addEventListener('start', () => { autoRotate = false; document.getElementById('btn-spin').classList.remove('active'); });
+controls.addEventListener('change', updateAngleHud);
 
-canvas.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  if (e.touches.length === 1 && dragging) {
-    const dx = e.touches[0].clientX - prevX;
-    const dy = e.touches[0].clientY - prevY;
-    theta += dx * 0.009;
-    tilt = Math.max(-1.56, Math.min(0.2, tilt + dy * 0.009));
-    prevX = e.touches[0].clientX;
-    prevY = e.touches[0].clientY;
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+// ─── Render Animation Loop matching Graph3D.js from Web App ───
+let animTime = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  animTime += 0.016;
+
+  if (autoRotate) {
+    surfGrp.rotation.y += 0.003;
     updateAngleHud();
-  } else if (e.touches.length === 2) {
-    const nextD = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY
-    );
-    if (pinchDist) {
-      radius = Math.max(3.8, Math.min(18.0, radius * (pinchDist / nextD)));
-    }
-    pinchDist = nextD;
   }
-}, { passive: false });
 
-canvas.addEventListener('touchend', () => { dragging = false; pinchDist = 0; }, { passive: true });
+  // Floating bobbing motion & rotating light from Graph3D.js
+  surfGrp.position.y = Math.sin(animTime * 0.5) * 0.08;
+  pl1.position.x = Math.cos(animTime * 0.3) * 5;
+  pl1.position.z = Math.sin(animTime * 0.3) * 5;
 
-window.addEventListener('resize', resize);
-resize();
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
 updateAngleHud();
-render();
 </script>
 </body>
 </html>`;
@@ -1080,7 +856,7 @@ export default function GraphScreen({ route }) {
           accessibilityLabel="Show 3D multivariable surface"
         >
           <Ionicons name="cube-outline" size={16} color={mode === '3d' ? COLORS.primary : COLORS.textDim} />
-          <Text style={[gs.modeBtnText, mode === '3d' && { color: COLORS.primary }]}>3D Solid Surface</Text>
+          <Text style={[gs.modeBtnText, mode === '3d' && { color: COLORS.primary }]}>3D Three.js Surface</Text>
         </TouchableOpacity>
       </View>
 
@@ -1258,10 +1034,10 @@ export default function GraphScreen({ route }) {
         </ScrollView>
       )}
 
-      {/* ── 3D SOLID SURFACE MODE (High-End Solid Shading, Colormaps & Camera HUD) ── */}
+      {/* ── 3D SOLID SURFACE MODE (Three.js with OrbitControls, Lights & Particles) ── */}
       {mode === '3d' && (
         <View style={gs.fullBleed3dContainer}>
-          {/* Full Screen WebGL 3D Canvas */}
+          {/* Full Screen Three.js Canvas */}
           <View style={StyleSheet.absoluteFill}>
             {Platform.OS === 'web' ? (
               <iframe
@@ -1303,11 +1079,11 @@ export default function GraphScreen({ route }) {
               </TouchableOpacity>
             </View>
 
-            {/* 4 Solid Color Palettes */}
+            {/* Solid Color Palettes */}
             <View style={gs.colormapRow}>
               <Text style={gs.colormapLabel}>SOLID THEME:</Text>
               {[
-                { id: 'cyan', label: 'Electric Blue' },
+                { id: 'cyan', label: 'Electric Cyan' },
                 { id: 'sunset', label: 'Sunset Magma' },
                 { id: 'emerald', label: 'Cyber Emerald' },
                 { id: 'ceramic', label: 'Studio White' },
